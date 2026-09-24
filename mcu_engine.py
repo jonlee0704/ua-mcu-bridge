@@ -665,7 +665,7 @@ class MCUEngine:
             ch_id = self.bank_offset + slot
             ch = self.uad.channels.get(ch_id)
             if ch:
-                ch_name = ch.name.strip()
+                ch_name = ch.name.strip() or f"Channel {ch_id + 1}"
                 if self.active_send_idx is not None:
                     info = self.get_send_info(self.active_send_idx)
                     send = ch.sends.get(self.active_send_idx)
@@ -673,7 +673,7 @@ class MCUEngine:
                     pan = send.pan if send else 0.0
                     byp = send.bypass if send else False
                     byp_str = ", bypassed" if byp else ""
-                    self.voice.speak(f"{info['name']}, Channel {ch_id + 1}, {ch_name}, {format_db_speech(gain_db)}, {format_pan_speech(pan)}{byp_str}")
+                    self.voice.speak(f"{info['name']}, {ch_name}, {format_db_speech(gain_db)}, {format_pan_speech(pan)}{byp_str}")
                 else:
                     db_val = getattr(ch, 'fader_db', None)
                     if db_val is None:
@@ -684,7 +684,7 @@ class MCUEngine:
                     if ch.solo:
                         status_parts.append("soloed")
                     stat_str = (", " + ", ".join(status_parts)) if status_parts else ""
-                    self.voice.speak(f"Channel {ch_id + 1}, {ch_name}, {format_db_speech(db_val)}, {format_pan_speech(ch.pan)}{stat_str}")
+                    self.voice.speak(f"{ch_name}, {format_db_speech(db_val)}, {format_pan_speech(ch.pan)}{stat_str}")
 
     def _handle_sel_button(self, slot: int, target_ch: int, is_down: bool):
         """Handle SEL button: Double-Press (0.0 dB), Long-Press (Lowest Level -oo dB), Single-Press (Select)."""

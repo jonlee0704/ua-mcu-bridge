@@ -326,7 +326,7 @@ To empower blind and low-vision audio engineers to mix, record, and navigate wit
 #### Spoken Interactions Table:
 | Hardware Trigger | Action / Gesture | Spoken Feedback Example |
 | :--- | :--- | :--- |
-| **SEL Button (Tap)** | Channel Selection | *"Channel 1, Vocal, -6.2 dB, center"* or *"Channel 4, Guitar, 0 dB, left 50 percent, muted"* |
+| **SEL Button (Tap)** | Channel Selection | *"Vocal, -6.2 dB, center"* or *"Guitar, 0 dB, left 50 percent, muted"* |
 | **SEL Button (Double-Tap)** | Snap Fader to 0 dB Unity | *"Vocal reset to zero dB"* |
 | **SEL Button (Long-Press)** | Snap Fader to -oo dB Floor | *"Vocal set to minus infinity"* |
 | **V-Pot Push** | Snap Pan to Dead Center | *"Vocal pan centered"* |
