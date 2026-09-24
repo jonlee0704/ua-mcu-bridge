@@ -550,7 +550,7 @@ class MCUEngine:
             print(f"[MCU] FLIP pressed -> Switched to {mode_name}")
             if self.active_send_idx is not None:
                 spk_mode = mode_name.replace(" (SENDS ON FADERS)", " sends on faders")
-                self.voice.speak(f"Aux & Cue mode: {spk_mode}")
+                self.voice.speak(spk_mode)
             else:
                 self.voice.speak("Main mix")
             for m in self.marquees:
