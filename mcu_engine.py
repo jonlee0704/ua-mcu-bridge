@@ -523,7 +523,7 @@ class MCUEngine:
                 return
 
         # 2. Dedicated Hardware Navigation Buttons on SSL UF8:
-        # < CHANNEL > buttons (Notes 48, 49) always shift bank by 1 track
+        # < CHANNEL > buttons (Notes 48, 49) shift bank by 1 track
         if note == 48:
             self.bank_by(-1)
             return
@@ -531,12 +531,20 @@ class MCUEngine:
             self.bank_by(1)
             return
 
-        # < PAGE > (Notes 44, 45) and < BANK > (Notes 46, 47) always shift bank by 8 tracks
-        if note in (46, 44):
-            self.bank_by(-8)
+        # < BANK > buttons (Notes 46, 47) move 1 track step
+        if note == 46:
+            self.bank_by(-1)
             return
-        if note in (47, 45):
-            self.bank_by(8)
+        if note == 47:
+            self.bank_by(1)
+            return
+
+        # < PAGE > buttons (Notes 44, 45) move pages like 1-8, 9-16, 17-24, 25-27
+        if note == 44:
+            self.page_by(-1)
+            return
+        if note == 45:
+            self.page_by(1)
             return
 
         # FLIP Button: 0x32 (50) -> Single-press: Cycle sends; Double-press: Direct return to Main Mix
@@ -957,16 +965,48 @@ class MCUEngine:
 
     # --- Full Refresh & Banking ---
 
-    def bank_by(self, delta: int):
-        """Shift active 8-channel bank."""
-        max_ch = max(self.uad.channels.keys()) if self.uad.channels else 25
-        new_offset = max(0, min(max_ch - 7, self.bank_offset + delta))
+    def page_by(self, direction: int):
+        """Move active bank in 8-channel pages (e.g. 1-8, 9-16, 17-24, 25-27)."""
+        total_ch = len(self.uad.channels) if self.uad.channels else 25
+        max_page_offset = max(0, ((total_ch - 1) // 8) * 8)
+        if direction > 0:
+            new_offset = min(max_page_offset, ((self.bank_offset // 8) + 1) * 8)
+        else:
+            new_offset = max(0, ((self.bank_offset - 1) // 8) * 8)
+
         if new_offset != self.bank_offset:
             self._cancel_all_sel_timers()
             self.bank_offset = new_offset
             for m in self.marquees:
                 m.reset()
-            print(f"[MCU] Bank switched to channels {self.bank_offset + 1} - {self.bank_offset + 8}")
+            print(f"[MCU] Page switched to channels {self.bank_offset + 1} - {min(self.bank_offset + 8, total_ch)}")
+            self.refresh_all_slots()
+            start_num = self.bank_offset + 1
+            end_num = min(self.bank_offset + 8, total_ch)
+            first_ch = self.uad.channels.get(self.bank_offset)
+            last_ch = self.uad.channels.get(end_num - 1)
+            first_name = first_ch.name.strip() if first_ch else ""
+            last_name = last_ch.name.strip() if last_ch else ""
+            if first_name and last_name:
+                if first_name == last_name:
+                    self.voice.speak_debounced(f"{first_name}", delay=0.25)
+                else:
+                    self.voice.speak_debounced(f"{first_name} through {last_name}", delay=0.25)
+            elif first_name:
+                self.voice.speak_debounced(f"{first_name}", delay=0.25)
+            else:
+                self.voice.speak_debounced(f"{start_num} through {end_num}", delay=0.25)
+
+    def bank_by(self, delta: int):
+        """Shift active bank by delta tracks (1-track steps)."""
+        max_ch = max(self.uad.channels.keys()) if self.uad.channels else 25
+        new_offset = max(0, min(max_ch, self.bank_offset + delta))
+        if new_offset != self.bank_offset:
+            self._cancel_all_sel_timers()
+            self.bank_offset = new_offset
+            for m in self.marquees:
+                m.reset()
+            print(f"[MCU] Bank shifted to channels {self.bank_offset + 1} - {min(self.bank_offset + 8, max_ch + 1)}")
             self.refresh_all_slots()
             start_num = self.bank_offset + 1
             end_num = min(self.bank_offset + 8, len(self.uad.channels) if self.uad.channels else self.bank_offset + 8)

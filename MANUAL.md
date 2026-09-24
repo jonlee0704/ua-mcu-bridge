@@ -227,12 +227,12 @@ The large brushed metal encoder on the right side of the UF8 can be toggled betw
 ---
 
 ### 4.5 Bank & Channel Navigation Controls
-* **Bank Buttons (`< BANK >` Notes 46 / 47):**
-  * Shifts the active 8-fader surface by an entire 8-channel bank (e.g., Channels 1–8 $\rightarrow$ Channels 9–16).
 * **Page Buttons (`< PAGE >` Notes 44 / 45):**
-  * Function identically to the Bank buttons, shifting 8 channels per click.
+  * Moves the active 8-fader surface in discrete **8-channel page jumps** (e.g., Channels 1–8 $\rightarrow$ Channels 9–16 $\rightarrow$ Channels 17–24 $\rightarrow$ Channels 25–27).
+* **Bank Buttons (`< BANK >` Notes 46 / 47):**
+  * Nudges the fader bank by **1 single track step** at a time (e.g., Channels 1–8 $\rightarrow$ Channels 2–9).
 * **Channel Buttons (`< CHANNEL >` Notes 48 / 49):**
-  * Nudges the fader bank by 1 single track at a time, allowing you to align any track to fader 1.
+  * Nudges the fader bank by **1 single track step** at a time, allowing flexible alignment.
 
 #### Channel Layout & Aux Return Mapping:
 * **Active Input Channels:** Discovers all hardware and virtual Apollo inputs (Mic/Line, ADAT, S/PDIF, Virtual, and TALKBACK).
@@ -357,9 +357,9 @@ To empower blind and low-vision audio engineers to mix, record, and navigate wit
 | **Mute / Cut Buttons (Ch 1–8)** | 16 – 23 | `0x10` – `0x17` | Bidirectional | Toggle Mute or Send Bypass + LED Tally |
 | **Select Buttons (Ch 1–8)** | 24 – 31 | `0x18` – `0x1F` | Bidirectional | Single (Select), Double (0 dB), Long (-oo dB) |
 | **V-Pot Push (Ch 1–8)** | 32 – 39 | `0x20` – `0x27` | Inbound | Resets Pan to Center (`0.0`) |
-| **Page Left / Right** | 44 / 45 | `0x2C` / `0x2D` | Inbound | Shifts bank by 8 tracks |
-| **Bank Left / Right** | 46 / 47 | `0x2E` / `0x2F` | Inbound | Shifts bank by 8 tracks |
-| **Channel Left / Right** | 48 / 49 | `0x30` / `0x31` | Inbound | Nudges bank by 1 track |
+| **Page Left / Right** | 44 / 45 | `0x2C` / `0x2D` | Inbound | Shifts bank by 8-channel pages (1-8, 9-16...) |
+| **Bank Left / Right** | 46 / 47 | `0x2E` / `0x2F` | Inbound | Nudges bank by 1 track step |
+| **Channel Left / Right** | 48 / 49 | `0x30` / `0x31` | Inbound | Nudges bank by 1 track step |
 | **FLIP Button** | 50 | `0x32` | Bidirectional | Single: Cycle Main $\rightarrow$ Aux 1/2 $\rightarrow$ Cue 1–4; Double: Direct Main Mix |
 | **Wheel Click / Push** | 84, 100, 101, 79 | `0x54`, `0x64`, etc. | Inbound | Toggles Wheel Mode (Option 1 $\leftrightarrow$ Option 2) |
 | **Fader Touch Sense (Ch 1–8)**| 104 – 111 | `0x68` – `0x6F` | Inbound | Capacitive touch hold (disables motor fighting)|
