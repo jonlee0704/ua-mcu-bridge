@@ -7,6 +7,7 @@ between SSL UF8 and UAD Apollo Console.
 import json
 import math
 import os
+import subprocess
 import threading
 import time
 from typing import Callable, Dict, List, Optional
@@ -43,6 +44,129 @@ def save_wheel_mode(mode: str):
             json.dump(cfg, f, indent=2)
     except Exception:
         pass
+
+
+def load_speech_mode() -> bool:
+    """Read voice guidance preference (default: True for accessibility)."""
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r") as f:
+                cfg = json.load(f)
+                return cfg.get("speech_feedback", True)
+    except Exception:
+        pass
+    return True
+
+
+def save_speech_mode(enabled: bool):
+    """Save voice guidance preference to ~/.uamcu_config.json."""
+    try:
+        cfg = {}
+        if os.path.exists(CONFIG_PATH):
+            try:
+                with open(CONFIG_PATH, "r") as f:
+                    cfg = json.load(f)
+            except Exception:
+                cfg = {}
+        cfg["speech_feedback"] = enabled
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception:
+        pass
+
+
+def format_db_speech(db: float) -> str:
+    """Format dB float to clear natural speech for blind audio engineers."""
+    if db <= -140.0:
+        return "minus infinity dB"
+    if abs(db) < 0.1:
+        return "zero dB"
+    if db > 0:
+        return f"plus {db:.1f} dB"
+    return f"{db:.1f} dB"
+
+
+def format_pan_speech(pan: float) -> str:
+    """Format pan float (-1.0 to 1.0) to natural speech."""
+    if abs(pan) < 0.05:
+        return "center"
+    pct = int(round(abs(pan) * 100))
+    side = "left" if pan < 0 else "right"
+    return f"{side} {pct} percent"
+
+
+class VoiceAnnouncer:
+    """Non-blocking, interruptible speech announcer for blind and screenless audio operation.
+    Uses macOS native /usr/bin/say at a natural pace (-r 210) for instant tactile feedback.
+    Never blocks MIDI parsing or audio threads.
+    """
+    def __init__(self):
+        self._proc: Optional[subprocess.Popen] = None
+        self._lock = threading.Lock()
+        self._debounce_timer: Optional[threading.Timer] = None
+
+    def is_enabled(self) -> bool:
+        return load_speech_mode()
+
+    def speak(self, text: str, interrupt: bool = True):
+        """Speak the given text if voice guidance is enabled. Non-blocking."""
+        if not self.is_enabled() or not text:
+            return
+
+        with self._lock:
+            if self._debounce_timer:
+                try:
+                    self._debounce_timer.cancel()
+                except Exception:
+                    pass
+                self._debounce_timer = None
+
+            if interrupt and self._proc is not None:
+                try:
+                    if self._proc.poll() is None:
+                        self._proc.terminate()
+                except Exception:
+                    pass
+                self._proc = None
+
+            try:
+                self._proc = subprocess.Popen(
+                    ["/usr/bin/say", "-r", "210", text],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            except Exception as e:
+                print(f"[Voice] Speech error: {e}")
+
+    def speak_debounced(self, text: str, delay: float = 0.35):
+        """Debounce speech (e.g. rapid wheel turns), speaking only after user pauses."""
+        if not self.is_enabled() or not text:
+            return
+
+        with self._lock:
+            if self._debounce_timer:
+                try:
+                    self._debounce_timer.cancel()
+                except Exception:
+                    pass
+            self._debounce_timer = threading.Timer(delay, self.speak, args=[text])
+            self._debounce_timer.daemon = True
+            self._debounce_timer.start()
+
+    def stop(self):
+        with self._lock:
+            if self._debounce_timer:
+                try:
+                    self._debounce_timer.cancel()
+                except Exception:
+                    pass
+            if self._proc is not None:
+                try:
+                    if self._proc.poll() is None:
+                        self._proc.terminate()
+                except Exception:
+                    pass
+                self._proc = None
 
 
 class SlotMarquee:
@@ -186,6 +310,10 @@ class MCUEngine:
         self._marquee_thread = threading.Thread(target=self._marquee_loop, daemon=True)
         self._marquee_thread.start()
 
+        # Initialize Voice Guidance for blind and screenless accessibility
+        self.voice = VoiceAnnouncer()
+        threading.Timer(0.8, lambda: self.voice.speak("Tactile Accessibility Bridge connected. Voice guidance enabled.")).start()
+
         # Initialize hardware meters
         self.enable_meters()
 
@@ -302,14 +430,18 @@ class MCUEngine:
         if 32 <= note <= 39:
             slot = note - 32
             target_ch = self.bank_offset + slot
+            ch_obj = self.uad.channels.get(target_ch)
+            ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
             if self.active_send_idx is not None:
                 info = self.get_send_info(self.active_send_idx)
                 print(f"[MCU] V-Pot Push: Reset channel {target_ch + 1} {info['name']} Pan to Center")
                 self.uad.set_send_pan(target_ch, self.active_send_idx, 0.0)
+                self.voice.speak(f"{ch_name} {info['name']} pan centered")
             else:
                 print(f"[MCU] V-Pot Push: Reset channel {target_ch + 1} Pan to Center")
                 self.uad.set_pan(target_ch, 0.0)
                 self._update_lcd_row2()
+                self.voice.speak(f"{ch_name} pan centered")
             self.send_vpot_led_ring(slot, 0.0)
             return
 
@@ -318,18 +450,24 @@ class MCUEngine:
             slot = note - 16
             target_ch = self.bank_offset + slot
             ch_obj = self.uad.channels.get(target_ch)
+            ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
             if self.active_send_idx is not None:
                 send = ch_obj.sends.setdefault(self.active_send_idx, UADSend(self.active_send_idx)) if ch_obj else None
                 new_byp = not (send.bypass if send else False)
                 self.uad.set_send_bypass(target_ch, self.active_send_idx, new_byp)
                 self.send_mute_led(slot, new_byp)
                 self._update_lcd_row2()
+                info = self.get_send_info(self.active_send_idx)
+                byp_state = "bypassed" if new_byp else "active"
+                self.voice.speak(f"{ch_name} {info['name']} send {byp_state}")
                 return
             else:
                 new_mute = not (ch_obj.mute if ch_obj else False)
                 self.uad.set_mute(target_ch, new_mute)
                 self.send_mute_led(slot, new_mute)
                 self._update_lcd_row2()
+                mute_state = "muted" if new_mute else "unmuted"
+                self.voice.speak(f"{ch_name} {mute_state}")
                 return
 
         # Solo Buttons: 0x08..0x0F (8..15)
@@ -337,9 +475,12 @@ class MCUEngine:
             slot = note - 8
             target_ch = self.bank_offset + slot
             ch_obj = self.uad.channels.get(target_ch)
+            ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
             new_solo = not (ch_obj.solo if ch_obj else False)
             self.uad.set_solo(target_ch, new_solo)
             self.send_solo_led(slot, new_solo)
+            solo_state = "solo on" if new_solo else "solo off"
+            self.voice.speak(f"{ch_name} {solo_state}")
             return
 
         # Channel Rotary Wheel Push / Click: Note 84 (Jog Click) / Note 100 / Note 101 / Note 79
@@ -367,6 +508,8 @@ class MCUEngine:
                 self.uad.nudge_monitor_db(direction * 1.0)
                 disp_str = f"MONITOR: {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "MONITOR: MUTED"
                 self.show_temp_hud(f">>> {disp_str} <<<", duration=1.2)
+                spk_str = f"Monitor {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "Monitor Muted"
+                self.voice.speak_debounced(spk_str, delay=0.35)
                 return
             else:
                 # Option 1: 1-Track Navigation
@@ -403,6 +546,8 @@ class MCUEngine:
                     mode_name = "MAIN MIX (NORMAL)"
 
             print(f"[MCU] FLIP pressed -> Switched to {mode_name}")
+            spk_mode = mode_name.replace(" (SENDS ON FADERS)", " sends on faders").replace(" (NORMAL)", "")
+            self.voice.speak(f"Active mode: {spk_mode}")
             for m in self.marquees:
                 m.reset()
             self.send_flip_led(self.active_send_idx is not None)
@@ -446,6 +591,8 @@ class MCUEngine:
                 self.uad.nudge_monitor_db(delta * 1.0)
                 disp_str = f"MONITOR: {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "MONITOR: MUTED"
                 self.show_temp_hud(f">>> {disp_str} <<<", duration=1.2)
+                spk_str = f"Monitor {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "Monitor Muted"
+                self.voice.speak_debounced(spk_str, delay=0.35)
             else:
                 self.bank_by(delta)
 
@@ -509,6 +656,31 @@ class MCUEngine:
         for s in range(self.num_slots):
             self.send_sel_led(s, s == self.selected_slot)
 
+        if self.selected_slot is not None:
+            ch_id = self.bank_offset + slot
+            ch = self.uad.channels.get(ch_id)
+            if ch:
+                ch_name = ch.name.strip()
+                if self.active_send_idx is not None:
+                    info = self.get_send_info(self.active_send_idx)
+                    send = ch.sends.get(self.active_send_idx)
+                    gain_db = send.gain_db if send else -144.0
+                    pan = send.pan if send else 0.0
+                    byp = send.bypass if send else False
+                    byp_str = ", bypassed" if byp else ""
+                    self.voice.speak(f"{info['name']}, Channel {ch_id + 1}, {ch_name}, {format_db_speech(gain_db)}, {format_pan_speech(pan)}{byp_str}")
+                else:
+                    db_val = getattr(ch, 'fader_db', None)
+                    if db_val is None:
+                        db_val = tapered_to_db(ch.fader)
+                    status_parts = []
+                    if ch.mute:
+                        status_parts.append("muted")
+                    if ch.solo:
+                        status_parts.append("soloed")
+                    stat_str = (", " + ", ".join(status_parts)) if status_parts else ""
+                    self.voice.speak(f"Channel {ch_id + 1}, {ch_name}, {format_db_speech(db_val)}, {format_pan_speech(ch.pan)}{stat_str}")
+
     def _handle_sel_button(self, slot: int, target_ch: int, is_down: bool):
         """Handle SEL button: Double-Press (0.0 dB), Long-Press (Lowest Level -oo dB), Single-Press (Select)."""
         now = time.time()
@@ -556,25 +728,32 @@ class MCUEngine:
 
             # Check if ZERO mode was armed
             if self.zero_mode_held or self.zero_mode_latched:
+                ch_obj = self.uad.channels.get(target_ch)
+                ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
                 print(f"[MCU] ZERO + SEL: Resetting channel {target_ch + 1} (slot {slot + 1}) to 0.0 dB")
                 self.uad.set_fader(target_ch, 0.7818182)
                 self.send_fader_position(slot, 0.7818182)
                 self._update_lcd_row2()
                 self.send_sel_led(slot, True)
                 self._sel_release_time[slot] = 0.0
+                self.voice.speak(f"{ch_name} reset to zero dB")
                 return
 
             # Check for double-press (released within 350ms of previous release)
             if now - self._sel_release_time[slot] < 0.35:
                 # Double-press detected: Reset to 0.0 dB
                 self._sel_release_time[slot] = 0.0
+                ch_obj = self.uad.channels.get(target_ch)
+                ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
                 if self.active_send_idx is not None:
                     info = self.get_send_info(self.active_send_idx)
                     print(f"[MCU] SEL {slot + 1} Double-Press: Resetting channel {target_ch + 1} {info['name']} to 0.0 dB")
                     self.uad.set_send_gain(target_ch, self.active_send_idx, 0.7818182)
+                    self.voice.speak(f"{ch_name} {info['name']} send reset to zero dB")
                 else:
                     print(f"[MCU] SEL {slot + 1} Double-Press: Resetting channel {target_ch + 1} to 0.0 dB")
                     self.uad.set_fader(target_ch, 0.7818182)
+                    self.voice.speak(f"{ch_name} reset to zero dB")
                 self.send_fader_position(slot, 0.7818182)
                 self._update_lcd_row2()
                 self.send_sel_led(slot, True)
@@ -589,13 +768,17 @@ class MCUEngine:
     def _on_sel_long_press(self, slot: int, target_ch: int):
         """Callback when SEL button is held for > 0.5s: Reset fader to lowest level (-oo dB)."""
         self._sel_long_fired[slot] = True
+        ch_obj = self.uad.channels.get(target_ch)
+        ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
         if self.active_send_idx is not None:
             info = self.get_send_info(self.active_send_idx)
             print(f"[MCU] SEL {slot + 1} Long-Press: Resetting channel {target_ch + 1} {info['name']} to lowest level (-oo dB)")
             self.uad.set_send_gain(target_ch, self.active_send_idx, 0.0)
+            self.voice.speak(f"{ch_name} {info['name']} send set to minus infinity")
         else:
             print(f"[MCU] SEL {slot + 1} Long-Press: Resetting channel {target_ch + 1} to lowest level (-oo dB)")
             self.uad.set_fader(target_ch, 0.0)
+            self.voice.speak(f"{ch_name} set to minus infinity")
         self.send_fader_position(slot, 0.0)
         self._update_lcd_row2()
         self.send_sel_led(slot, False)
@@ -703,6 +886,16 @@ class MCUEngine:
                 m.reset()
             print(f"[MCU] Bank switched to channels {self.bank_offset + 1} - {self.bank_offset + 8}")
             self.refresh_all_slots()
+            start_num = self.bank_offset + 1
+            end_num = min(self.bank_offset + 8, len(self.uad.channels) if self.uad.channels else self.bank_offset + 8)
+            first_ch = self.uad.channels.get(self.bank_offset)
+            last_ch = self.uad.channels.get(end_num - 1)
+            first_name = first_ch.name.strip() if first_ch else ""
+            last_name = last_ch.name.strip() if last_ch else ""
+            if first_name and last_name:
+                self.voice.speak_debounced(f"Bank channels {start_num} to {end_num}, {first_name} through {last_name}", delay=0.25)
+            else:
+                self.voice.speak_debounced(f"Bank channels {start_num} to {end_num}", delay=0.25)
 
     def refresh_all_slots(self):
         """Synchronize all 8 physical faders, LEDs, and LCD rows with current bank & mode."""
@@ -821,9 +1014,11 @@ class MCUEngine:
         if current == "channel":
             new_mode = "monitor"
             msg = ">>> WHEEL: APOLLO MONITOR VOL <<<"
+            self.voice.speak("Channel wheel: Apollo Monitor Volume")
         else:
             new_mode = "channel"
             msg = ">>> WHEEL: TRACK NAV (1-CH) <<<"
+            self.voice.speak("Channel wheel: Track Navigation")
         self.wheel_mode = new_mode
         save_wheel_mode(new_mode)
         try:

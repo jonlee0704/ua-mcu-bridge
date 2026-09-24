@@ -297,6 +297,9 @@ The native Swift application provides an unobtrusive menu bar status item:
  ├── ● Running (Port 9) [Status in Green]
  ├── Stop Bridge / Restart Bridge
  ├── ─────────────────────────────
+ ├── Voice Guidance: ON (Speaks channels & levels) >
+ │    ├── Voice Guidance: Enabled (ON) [✔]
+ │    └── Voice Guidance: Disabled (OFF)
  ├── MIDI Port: SSL V-MIDI Port 9  >
  │    ├── Port 1 (SSL 360 DAW 1)
  │    ├── Port 5 (SSL 360 DAW 2)
@@ -310,6 +313,30 @@ The native Swift application provides an unobtrusive menu bar status item:
  ├── Open Bridge Directory...
  └── Quit UA-MCU Bridge
 ```
+
+---
+
+### 4.10 Built-In Voice Guidance & Non-Visual Speech Feedback (Accessibility)
+To empower blind and low-vision audio engineers to mix, record, and navigate without requiring sight or even enabling macOS system VoiceOver, the bridge features a built-in, low-latency asynchronous speech synthesis system (`VoiceAnnouncer`):
+* **Self-Contained & Independent:** Uses macOS native `/usr/bin/say` at an optimized pace (`-r 210`) without any third-party screen reader requirement.
+* **Zero Audio/MIDI Latency:** Speech operates completely asynchronously in isolated non-blocking subprocesses. Moving faders, rotating knobs, or receiving meter packets is never delayed.
+* **Instant Interruption & Debouncing:** Fast gestures immediately cancel previous utterances so spoken feedback never falls behind, and rapid continuous adjustments (such as spinning the monitor volume wheel) automatically debounce (350ms) to speak only the settled final value.
+* **Dynamic Menu Bar Toggle:** Can be toggled ON or OFF at any time via the macOS Menu Bar under **Voice Guidance**. Settings are preserved persistently in `~/.uamcu_config.json`.
+
+#### Spoken Interactions Table:
+| Hardware Trigger | Action / Gesture | Spoken Feedback Example |
+| :--- | :--- | :--- |
+| **SEL Button (Tap)** | Channel Selection | *"Channel 1, Vocal, -6.2 dB, center"* or *"Channel 4, Guitar, 0 dB, left 50 percent, muted"* |
+| **SEL Button (Double-Tap)** | Snap Fader to 0 dB Unity | *"Vocal reset to zero dB"* |
+| **SEL Button (Long-Press)** | Snap Fader to -oo dB Floor | *"Vocal set to minus infinity"* |
+| **V-Pot Push** | Snap Pan to Dead Center | *"Vocal pan centered"* |
+| **MUTE Button** | Toggle Mute | *"Vocal muted"* / *"Vocal unmuted"* |
+| **SOLO Button** | Toggle Solo | *"Vocal solo on"* / *"Vocal solo off"* |
+| **FLIP Button** | Cycle Send Bus Modes | *"Active mode: Aux 1 sends on faders"* / *"Active mode: Main mix"* |
+| **Wheel Push / Click** | Toggle Wheel Mode | *"Channel wheel mode: Apollo Monitor Volume"* / *"Track Navigation"* |
+| **Channel Wheel Nudge** | Adjust Monitor Volume | *"Monitor -18.0 dB"* (debounced by 350ms) |
+| **< BANK > / < PAGE >** | Bank 8 Channels | *"Bank channels 9 to 16, Vocal through Guitar"* |
+| **Startup / Connection** | Bridge Launch | *"Tactile Accessibility Bridge connected. Voice guidance enabled."* |
 
 ---
 

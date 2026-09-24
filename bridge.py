@@ -41,9 +41,10 @@ def render_dashboard(engine: MCUEngine, uad: UADClient, midi: CoreMIDIAdapter, p
 
     wheel_mode = getattr(engine, 'wheel_mode', 'channel')
     wheel_label = "\033[92mTrack Nav (1-CH)\033[0m" if wheel_mode == "channel" else "\033[95mMonitor Vol\033[0m"
+    voice_label = "\033[92mON (Speech)\033[0m" if getattr(engine, 'voice', None) and engine.voice.is_enabled() else "\033[90mOFF\033[0m"
 
     print(f" CoreMIDI: {midi_stat:<35} | UAD Mixer: {uad_stat}")
-    print(f" Active Bank: Channels {bank_start} - {bank_end} (Total: {total_ch}) | Mode: {mode_label} | Wheel: {wheel_label}")
+    print(f" Active Bank: Channels {bank_start} - {bank_end} (Total: {total_ch}) | Mode: {mode_label} | Wheel: {wheel_label} | Voice: {voice_label}")
     print("-----------------------------------------------------------------------------------------")
     print(" Slot | Channel Name | Level (tapered) | Volume dB | Live Meter (dBFS) |   Pan   |  Mute  |  Solo  ")
     print("------+--------------+-----------------+-----------+-------------------+---------+--------+--------")

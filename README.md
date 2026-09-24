@@ -56,9 +56,15 @@ It provides bidirectional motorized fader tracking, center-screen scribble strip
 * **Real-Time VU Level Metering:**
   * Dedicated 25 FPS background poller queries live Apollo input meters (`/devices/0/inputs/{ch}/meters/0`).
   * Streams MCU Channel Pressure (`0xD0`) to the physical 16-segment ladder meters on the UF8.
+* **Built-In Voice Guidance & Non-Visual Speech Feedback (Accessibility):**
+  * Built-in asynchronous speech synthesis speaks channel names, dB levels, pan positions, mute/solo states, and menu selections.
+  * Completely independent of macOS system VoiceOver — works out of the box for screenless audio operation.
+  * Instant gesture interruption and intelligent debouncing (350ms for rotary monitor wheel) ensure speech never lags behind physical mixing.
+  * Can be toggled ON or OFF directly from the native macOS menu bar status icon.
 * **Native macOS Menu Bar App:**
   * Clean status indicator (Green = Running, Red = Stopped).
   * Instant port switching (Ports 1–12; default is Port 9).
+  * Voice Guidance setting toggle (Enabled / Disabled).
   * Direct access to Live Terminal Monitor and log files.
 * **Zero External Python Dependencies:**
   * Interfaces directly with macOS `CoreMIDI.framework` via `ctypes`.

@@ -13,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var currentPort: Int = 9
     var isRunning: Bool = false
     var currentWheelMode: String = "channel"
+    var isSpeechEnabled: Bool = true
     let configFileURL: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".uamcu_config.json")
     
@@ -22,30 +23,48 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if savedPort > 0 {
             currentPort = savedPort
         }
-        readWheelMode()
+        readConfig()
         
         setupStatusBar()
         startBridge()
     }
     
-    func readWheelMode() {
+    func readConfig() {
         if let data = try? Data(contentsOf: configFileURL),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let mode = json["wheel_mode"] as? String {
-            currentWheelMode = mode
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let mode = json["wheel_mode"] as? String {
+                currentWheelMode = mode
+            }
+            if let speech = json["speech_feedback"] as? Bool {
+                isSpeechEnabled = speech
+            }
         } else {
-            let saved = UserDefaults.standard.string(forKey: "UAMCUWheelMode") ?? "channel"
-            currentWheelMode = saved
+            currentWheelMode = UserDefaults.standard.string(forKey: "UAMCUWheelMode") ?? "channel"
+            isSpeechEnabled = UserDefaults.standard.object(forKey: "UAMCUSpeechFeedback") as? Bool ?? true
         }
     }
     
-    func writeWheelMode(_ mode: String) {
-        currentWheelMode = mode
-        UserDefaults.standard.set(mode, forKey: "UAMCUWheelMode")
-        let dict = ["wheel_mode": mode]
+    func writeConfig() {
+        var dict: [String: Any] = [:]
+        if let data = try? Data(contentsOf: configFileURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            dict = existing
+        }
+        dict["wheel_mode"] = currentWheelMode
+        dict["speech_feedback"] = isSpeechEnabled
+        UserDefaults.standard.set(currentWheelMode, forKey: "UAMCUWheelMode")
+        UserDefaults.standard.set(isSpeechEnabled, forKey: "UAMCUSpeechFeedback")
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted) {
             try? data.write(to: configFileURL)
         }
+    }
+    
+    func speakAnnouncement(_ text: String) {
+        guard isSpeechEnabled else { return }
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        proc.arguments = ["-r", "210", text]
+        try? proc.run()
     }
     
     func applicationWillTerminate(_ notification: Notification) {
@@ -175,7 +194,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(portParentItem)
         
         // Channel Wheel Mode Submenu
-        readWheelMode()
+        readConfig()
         let wheelMenu = NSMenu()
         let channelItem = NSMenuItem(title: "Option 1: Track Navigation (1-Track Step)", action: #selector(selectWheelModeAction(_:)), keyEquivalent: "")
         channelItem.target = self
@@ -193,6 +212,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let wheelParentItem = NSMenuItem(title: wheelTitle, action: nil, keyEquivalent: "")
         wheelParentItem.submenu = wheelMenu
         menu.addItem(wheelParentItem)
+        
+        // Voice Guidance / Spoken Feedback Submenu (Accessibility)
+        let voiceMenu = NSMenu()
+        let voiceToggleItem = NSMenuItem(
+            title: isSpeechEnabled ? "Voice Guidance: Enabled (ON)" : "Voice Guidance: Disabled (OFF)",
+            action: #selector(toggleSpeechAction(_:)),
+            keyEquivalent: "v"
+        )
+        voiceToggleItem.target = self
+        if isSpeechEnabled { voiceToggleItem.state = .on }
+        voiceMenu.addItem(voiceToggleItem)
+        
+        let voiceParentTitle = isSpeechEnabled ? "Voice Guidance: ON (Speaks channels & levels)" : "Voice Guidance: OFF"
+        let voiceParentItem = NSMenuItem(title: voiceParentTitle, action: nil, keyEquivalent: "")
+        voiceParentItem.submenu = voiceMenu
+        menu.addItem(voiceParentItem)
         
         menu.addItem(NSMenuItem.separator())
         
@@ -345,13 +380,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Actions
     @objc func toggleBridgeAction() {
         if isRunning {
+            speakAnnouncement("Stopping bridge")
             stopBridge()
         } else {
+            speakAnnouncement("Starting bridge")
             startBridge()
         }
     }
     
     @objc func restartBridgeAction() {
+        speakAnnouncement("Restarting bridge")
         stopBridge { [weak self] in
             self?.startBridge()
         }
@@ -362,15 +400,30 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if newPort != currentPort {
             currentPort = newPort
             UserDefaults.standard.set(newPort, forKey: "UAMCUBridgePort")
+            speakAnnouncement("Switching to MIDI Port \(newPort)")
             restartBridgeAction()
         }
     }
     
     @objc func selectWheelModeAction(_ sender: NSMenuItem) {
         if let mode = sender.representedObject as? String {
-            writeWheelMode(mode)
+            currentWheelMode = mode
+            writeConfig()
             buildMenu()
+            speakAnnouncement(mode == "monitor" ? "Wheel mode: Apollo Monitor Volume" : "Wheel mode: Track Navigation")
         }
+    }
+    
+    @objc func toggleSpeechAction(_ sender: NSMenuItem) {
+        isSpeechEnabled = !isSpeechEnabled
+        writeConfig()
+        buildMenu()
+        
+        let msg = isSpeechEnabled ? "Voice guidance enabled" : "Voice guidance disabled"
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/say")
+        proc.arguments = ["-r", "210", msg]
+        try? proc.run()
     }
     
     @objc func openTerminalMonitor() {
