@@ -3,7 +3,17 @@
 
 **Creator:** S&D A11y Solutions ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
 **Release Date:** September 24, 2026  
-**License & Terms:** [Terms of Service](file:///Users/jongyeonglee/Desktop/Vibe%20projects/echonav---accessible-media-manager/ua-mcu-bridge/TERMS_OF_SERVICE.md)
+**License & Terms:** [MIT with Audio Safety Rider](file:///Users/jongyeonglee/Desktop/Vibe%20projects/echonav---accessible-media-manager/ua-mcu-bridge/LICENSE) | [Terms of Service](file:///Users/jongyeonglee/Desktop/Vibe%20projects/echonav---accessible-media-manager/ua-mcu-bridge/TERMS_OF_SERVICE.md)
+
+---
+
+> [!IMPORTANT]
+> **Legal & Non-Affiliation Notice:**  
+> This software is an independent interoperability and accessibility utility developed by **S&D A11y Solutions**. It is **NOT affiliated with, sponsored by, or endorsed by** Solid State Logic (SSL), Audiotonix, Universal Audio, Inc. (UAD), or LOUD Audio, LLC (Mackie). All product names and registered marks are used purely for nominative identification under fair use doctrine.
+
+> [!CAUTION]
+> **Acoustic Safety Warning:**  
+> Controlling monitor volume and cue levels digitally carries acoustic risk. Always attenuate physical analog monitor controllers prior to launching the bridge to protect studio monitors and hearing.
 
 ---
 

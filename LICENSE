@@ -1,0 +1,54 @@
+MIT License with Audio Safety & Hardware Liability Rider
+
+Copyright (c) 2026 S&D A11y Solutions (snda11ysolutions@gmail.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice, this permission notice, and the following liability
+and acoustic safety rider shall be included in all copies or substantial
+portions of the Software.
+
+---
+
+### TRADEMARK & NON-AFFILIATION NOTICE
+This Software is an independent project created by S&D A11y Solutions. It is NOT
+affiliated, associated, authorized, endorsed by, sponsored by, or in any way
+officially connected with Solid State Logic, Audiotonix, Universal Audio, Inc.,
+LOUD Audio, LLC, or Apple Inc.
+
+All product names, logos, brands, and registered trademarks (such as "SSL",
+"UF8", "Universal Audio", "Apollo", "Console", "Mackie Control Universal") are
+the property of their respective owners and are used strictly for nominative,
+descriptive, and technical interoperability identification purposes.
+
+---
+
+### AUDIO EQUIPMENT & ACOUSTIC SAFETY RIDER
+THE SOFTWARE CONTROLS PHYSICAL HARDWARE GAIN STAGES, MOTORIZED FADERS, AND
+MONITOR OUTPUT LEVELS. BY USING THIS SOFTWARE, YOU ACKNOWLEDGE AND AGREE THAT:
+1. SUDDEN VOLUME LEVEL JUMPS, FEEDBACK BURSTS, OR UNMUTED SIGNALS CAN OCCUR
+   DUE TO SOFTWARE, HARDWARE, OR OPERATOR ERROR.
+2. HIGH SOUND PRESSURE LEVELS (SPL) CAN CAUSE PERMANENT, IRREVERSIBLE HEARING
+   DAMAGE (ACOUSTIC TRAUMA, TINNITUS) AND DESTRUCTION OF AUDIO MONITORS,
+   SPEAKERS, SUBWOOFERS, OR HEADPHONE DRIVERS.
+3. YOU ARE PERSONALLY RESPONSIBLE FOR ENSURING ANALOG VOLUME CONTROLLERS ARE
+   ATTENUATED PRIOR TO OPERATING THIS SOFTWARE, AND THAT MOTORIZED FADER TRAVEL
+   PATHS ARE UNOBSTRUCTED.
+
+---
+
+### DISCLAIMER OF WARRANTY & LIMITATION OF LIABILITY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS, COPYRIGHT HOLDERS, OR S&D A11Y SOLUTIONS BE LIABLE FOR ANY CLAIM,
+DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, STRICT
+LIABILITY, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE, INCLUDING BUT NOT LIMITED
+TO PERSONAL INJURY, HEARING DAMAGE, EQUIPMENT FAILURE, LOSS OF RECORDING
+SESSIONS, OR COMMERCIAL LOSS.

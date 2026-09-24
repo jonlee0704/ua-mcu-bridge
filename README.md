@@ -2,7 +2,28 @@
 
 **Creator:** S&D A11y Solutions ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
 **Release Date:** September 24, 2026  
-**Documentation:** [User Manual (`MANUAL.md`)](MANUAL.md) | [Terms of Service (`TERMS_OF_SERVICE.md`)](TERMS_OF_SERVICE.md)
+**License:** [MIT with Audio Safety Rider](LICENSE)  
+**Legal Terms:** [Terms of Service & EULA](TERMS_OF_SERVICE.md) | [User Manual](MANUAL.md)
+
+---
+
+> [!IMPORTANT]
+> **Legal & Non-Affiliation Disclaimer:**  
+> This project is an independent accessibility and workflow interoperability utility engineered by **S&D A11y Solutions**. It is **NOT** affiliated, authorized, maintained, sponsored, or endorsed by **Solid State Logic (SSL)**, **Audiotonix**, **Universal Audio, Inc. (UAD)**, or **LOUD Audio, LLC (Mackie)**. All product names, logos, and brands (including *SSL UF8*, *SSL 360°*, *Universal Audio*, *Apollo*, *UAD Console*, and *Mackie Control Universal*) are registered trademarks of their respective owners and are used strictly under **nominative fair use** for technical interoperability identification.
+
+> [!CAUTION]
+> **Acoustic Safety & Monitoring Warning:**  
+> This software controls hardware gain parameters, cue sends, and master monitor levels. Always turn down external analog speaker volume controllers before launching or testing the bridge. S&D A11y Solutions accepts no liability for acoustic shock, hearing injury, or hardware loudspeaker/headphone damage.
+
+---
+
+## Accessibility & Interoperability Mission
+
+**S&D A11y Solutions** developed this bridge to solve a critical accessibility and ergonomic barrier in modern music production and recording studios:
+
+* **Tactile Motor Control:** Many sound engineers and audio creators with motor impairments, visual impairments, or tactile interaction needs cannot operate on-screen software mixers efficiently using only a mouse or trackpad.
+* **Physical Fader Parity:** By bridging the tactile 100mm motorized faders, color scribble strips, and rotary encoders of the Solid State Logic UF8 directly to the Universal Audio Apollo Console engine, this utility restores full hands-on physical access to the tracking and monitoring workflow.
+* **Open Interoperability:** Implemented in pure Python and native macOS Swift using standard MIDI and local loopback TCP protocols without modifying proprietary binaries or circumventing copy protection.
 
 ---
 
