@@ -64,7 +64,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             } else {
                 button.image = drawFaderIcon()
             }
-            button.toolTip = "UA-MCU Bridge (SSL UF8 <-> UAD Console)"
+            button.toolTip = "Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8"
         }
         
         menu = NSMenu()
@@ -107,9 +107,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
         
         // Title
-        let titleItem = NSMenuItem(title: "UA-MCU Bridge", action: nil, keyEquivalent: "")
+        let titleItem = NSMenuItem(title: "Tactile Accessibility Bridge", action: nil, keyEquivalent: "")
         titleItem.attributedTitle = NSAttributedString(
-            string: "UA-MCU Bridge",
+            string: "Tactile Accessibility Bridge",
             attributes: [.font: NSFont.boldSystemFont(ofSize: 13)]
         )
         menu.addItem(titleItem)

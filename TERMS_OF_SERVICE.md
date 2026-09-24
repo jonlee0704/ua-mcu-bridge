@@ -3,7 +3,7 @@
 **Effective Date:** September 24, 2026  
 **Developer / Creator:** S&D A11y Solutions  
 **Contact Email:** [snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com)  
-**Product:** SSL UF8 Bridge for UAD Console ("Software", "the Application", "UA-MCU Bridge")
+**Product:** Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8 ("Software", "the Application", "UA-MCU Bridge")
 
 ---
 
@@ -14,7 +14,7 @@ BY DOWNLOADING, INSTALLING, RUNNING, COPYING, OR OTHERWISE USING THIS SOFTWARE, 
 
 ## 1. Third-Party Trademarks & Non-Affiliation Disclaimer
 
-1.1 **Independent Development:** **SSL UF8 Bridge for UAD Console** is an independently engineered integration utility developed by **S&D A11y Solutions**. 
+1.1 **Independent Development:** **Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8** is an independently engineered integration utility developed by **S&D A11y Solutions**. 
 
 1.2 **No Official Affiliation:** S&D A11y Solutions is **NOT** affiliated, associated, authorized, endorsed by, sponsored by, or in any way officially connected with:
 * **Solid State Logic (SSL)** or **Audiotonix**;

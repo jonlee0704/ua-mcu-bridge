@@ -1,4 +1,4 @@
-# SSL UF8 Bridge for UAD Console
+# Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8
 ## Comprehensive Operator's & Technical Reference Manual
 
 **Creator:** S&D A11y Solutions ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
@@ -19,7 +19,7 @@
 
 ## 1. System Architecture
 
-The **SSL UF8 Bridge for UAD Console** creates a seamless, low-latency, bi-directional control surface integration between the physical **Solid State Logic UF8 Advanced DAW Controller** and the **Universal Audio Apollo Console / Volt / UA Mixer Engine**.
+The **Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8** creates a seamless, low-latency, bi-directional control surface integration between the physical **Solid State Logic UF8 Advanced DAW Controller** and the **Universal Audio Apollo Console / Volt / UA Mixer Engine**.
 
 ![System Architecture with Real Hardware & Console](/Users/jongyeonglee/.gemini/antigravity-ide/brain/4fa47b43-7def-42af-81fe-c5a67051ce97/snda11y_architecture_diagram_1790276739280.jpg)
 

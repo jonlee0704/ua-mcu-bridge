@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-UA-MCU Bridge: Standalone SSL UF8 to UAD Apollo Console Bridge
+Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8
 Connects SSL UF8 (via Mackie Control Universal protocol) to UAD Console (raw TCP 127.0.0.1:4710)
 Creator: S&D A11y Solutions (snda11ysolutions@gmail.com)
 Date: September 24, 2026
-License & Terms: See TERMS_OF_SERVICE.md
+License & Terms: See TERMS_OF_SERVICE.md and LICENSE
 """
 
 import argparse
@@ -24,7 +24,7 @@ def render_dashboard(engine: MCUEngine, uad: UADClient, midi: CoreMIDIAdapter, p
     sys.stdout.write("\033[H\033[J")
 
     print("================================================================================")
-    print("           UA-MCU BRIDGE: SSL UF8 <---> UAD APOLLO CONSOLE (MCU)")
+    print("    TACTILE HARDWARE ACCESSIBILITY BRIDGE: SSL UF8 <---> UAD APOLLO CONSOLE    ")
     print("================================================================================")
     midi_stat = f"\033[92mONLINE (SSL V-MIDI Port {port_num})\033[0m" if midi.is_connected else "\033[91mDISCONNECTED\033[0m"
     uad_stat = "\033[92mONLINE (127.0.0.1:4710)\033[0m" if uad.is_connected else "\033[91mDISCONNECTED\033[0m"

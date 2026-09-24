@@ -1,4 +1,4 @@
-# SSL UF8 Bridge for UAD Console
+# Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8
 
 **Creator:** S&D A11y Solutions ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
 **Release Date:** September 24, 2026  
@@ -21,15 +21,15 @@
 
 **S&D A11y Solutions** developed this bridge to solve a critical accessibility and ergonomic barrier in modern music production and recording studios:
 
-* **Tactile Motor Control:** Many sound engineers and audio creators with motor impairments, visual impairments, or tactile interaction needs cannot operate on-screen software mixers efficiently using only a mouse or trackpad.
-* **Physical Fader Parity:** By bridging the tactile 100mm motorized faders, color scribble strips, and rotary encoders of the Solid State Logic UF8 directly to the Universal Audio Apollo Console engine, this utility restores full hands-on physical access to the tracking and monitoring workflow.
-* **Open Interoperability:** Implemented in pure Python and native macOS Swift using standard MIDI and local loopback TCP protocols without modifying proprietary binaries or circumventing copy protection.
+* **Tactile Motor Control for Blind & Low-Vision Creators:** Universal Audio’s Console application uses custom graphical rendering that lacks native screen reader support (VoiceOver, NVDA, JAWS), rendering it difficult or impossible for blind audio engineers to control with a mouse.
+* **100% Physical Fader Parity:** By bridging the tactile 100mm motorized faders, color scribble strips, detented rotary pots, and tactile buttons of the Solid State Logic UF8 directly to the Universal Audio Apollo Console engine, this bridge restores complete, eyes-free physical control over preamps, tracking, monitoring, and cue mixes.
+* **Open Interoperability:** Implemented in pure Python and native macOS Swift using standard CoreMIDI and local loopback TCP protocols without modifying proprietary binaries or circumventing copy protection.
 
 ---
 
 ## Overview
 
-**SSL UF8 Bridge for UAD Console** is a native, zero-dependency macOS bridge application connecting the **Solid State Logic (SSL) UF8** hardware control surface to **Universal Audio (UAD) Apollo Console / Volt / UA Mixer Engine** using the **Mackie Control Universal (MCU)** protocol.
+**Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8** is a native, zero-dependency macOS bridge application connecting the **Solid State Logic (SSL) UF8** hardware control surface to **Universal Audio (UAD) Apollo Console / Volt / UA Mixer Engine** using the **Mackie Control Universal (MCU)** protocol.
 
 It provides bidirectional motorized fader tracking, center-screen scribble strip LCD feedback with marquee scrolling, rotary pan controls with LED rings, dual-mode channel wheel navigation/monitor volume control, multi-bus sends-on-faders (Aux and Cue cycling), real-time 25 FPS VU audio metering, and an unobtrusive native macOS Menu Bar application.
 
