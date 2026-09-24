@@ -489,35 +489,37 @@ class MCUEngine:
             self.toggle_wheel_mode()
             return
 
-        # Navigation / Wheel Controls
-        # Notes: 46 (Bank Left), 47 (Bank Right), 48 (Channel Left), 49 (Channel Right), 44 (Page Left), 45 (Page Right)
-        is_wheel = (
-            note in (48, 49) or
-            self._wheel_strobe_active or
-            (time.time() - self._last_wheel_strobe < 0.15)
-        )
+        # Navigation Buttons & Rotary Wheel Controls
+        # Physical Buttons on SSL UF8:
+        # Notes: 44 (< PAGE), 45 (PAGE >), 46 (< BANK), 47 (BANK >), 48 (< CHANNEL), 49 (CHANNEL >)
+        # Note 83 is the physical wheel encoder touch/strobe indicator on SSL UF8.
+        is_wheel_rotation = self._wheel_strobe_active or (time.time() - self._last_wheel_strobe < 0.15)
 
-        mode = self.get_wheel_mode()
-
-        # 1. Channel Rotary Wheel Movement
-        if is_wheel and note in (46, 47, 48, 49):
-            direction = -1 if note in (46, 48) else 1
-
+        # 1. Rotary Wheel turned via Notes 48/49 (when SSL 360 wheel is in Nav emulation mode)
+        if is_wheel_rotation and note in (48, 49):
+            direction = -1 if note == 48 else 1
+            mode = self.get_wheel_mode()
             if mode == "monitor":
-                # Option 2: Apollo Master Monitor Volume Knob (1.0 dB per click)
-                self.uad.nudge_monitor_db(direction * 1.0)
-                disp_str = f"MONITOR: {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "MONITOR: MUTED"
-                self.show_temp_hud(f">>> {disp_str} <<<", duration=1.2)
-                spk_str = f"Monitor {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "Monitor Muted"
-                self.voice.speak_debounced(spk_str, delay=0.35)
+                if self.uad.nudge_monitor_db(direction * 1.0):
+                    disp_str = f"MONITOR: {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "MONITOR: MUTED"
+                    self.show_temp_hud(f">>> {disp_str} <<<", duration=1.2)
+                    spk_str = f"Monitor {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "Monitor Muted"
+                    self.voice.speak_debounced(spk_str, delay=0.35)
                 return
             else:
-                # Option 1: 1-Track Navigation
                 self.bank_by(direction)
                 return
 
-        # 2. Dedicated Hardware Navigation Buttons (< PAGE > / BANK < >)
-        # Always shift bank by 8 tracks
+        # 2. Dedicated Hardware Navigation Buttons on SSL UF8:
+        # < CHANNEL > buttons (Notes 48, 49) always shift bank by 1 track
+        if note == 48:
+            self.bank_by(-1)
+            return
+        if note == 49:
+            self.bank_by(1)
+            return
+
+        # < PAGE > (Notes 44, 45) and < BANK > (Notes 46, 47) always shift bank by 8 tracks
         if note in (46, 44):
             self.bank_by(-8)
             return
@@ -586,13 +588,16 @@ class MCUEngine:
             else:
                 delta = val & 0x3F
 
+            if delta == 0:
+                return
+
             mode = self.get_wheel_mode()
             if mode == "monitor":
-                self.uad.nudge_monitor_db(delta * 1.0)
-                disp_str = f"MONITOR: {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "MONITOR: MUTED"
-                self.show_temp_hud(f">>> {disp_str} <<<", duration=1.2)
-                spk_str = f"Monitor {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "Monitor Muted"
-                self.voice.speak_debounced(spk_str, delay=0.35)
+                if self.uad.nudge_monitor_db(delta * 1.0):
+                    disp_str = f"MONITOR: {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "MONITOR: MUTED"
+                    self.show_temp_hud(f">>> {disp_str} <<<", duration=1.2)
+                    spk_str = f"Monitor {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "Monitor Muted"
+                    self.voice.speak_debounced(spk_str, delay=0.35)
             else:
                 self.bank_by(delta)
 

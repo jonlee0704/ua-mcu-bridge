@@ -500,10 +500,15 @@ class UADClient:
         cmd = f"set /devices/{self.device_id}/outputs/{self.monitor_output_id}/CRMonitorLevel/value?context_type=main&func_id={fid} {val:.1f}"
         self.send_command(cmd)
 
-    def nudge_monitor_db(self, delta_db: float):
-        """Nudge Apollo master monitor output level by delta dB (e.g. +/- 1.0 dB)."""
+    def nudge_monitor_db(self, delta_db: float) -> bool:
+        """Nudge Apollo master monitor output level by delta dB (e.g. +/- 1.0 dB).
+        Returns True if the level actually changed, False if unchanged (clamped)."""
+        old_db = self.monitor_level_db
         new_db = max(-96.0, min(0.0, self.monitor_level_db + delta_db))
+        if abs(new_db - old_db) < 0.05:
+            return False
         self.set_monitor_db(new_db)
+        return True
 
     def set_monitor_level(self, value: float):
         """Set Apollo master monitor output tapered level (0.0 to 1.0)."""
