@@ -502,21 +502,26 @@ class MCUEngine:
             return
 
         # Navigation Buttons & Rotary Wheel Controls
-        # Physical Buttons on SSL UF8:
-        # Notes: 44 (< PAGE), 45 (PAGE >), 46 (< BANK), 47 (BANK >), 48 (< CHANNEL), 49 (CHANNEL >)
-        # Note 83 is the physical wheel encoder touch/strobe indicator on SSL UF8.
-        is_wheel_rotation = self._wheel_strobe_active or (time.time() - self._last_wheel_strobe < 0.15)
+        # Physical Controls on SSL UF8:
+        # Note 83 is the physical wheel encoder active indicator emitted by SSL UF8 on every rotation step.
+        is_wheel_rotation = self._wheel_strobe_active or (time.time() - self._last_wheel_strobe < 0.20)
 
-        # 1. Rotary Wheel turned via Notes 48/49 (when SSL 360 wheel is in Nav emulation mode)
-        if is_wheel_rotation and note in (48, 49):
-            direction = -1 if note == 48 else 1
+        # 1. Rotary Master Wheel turned (Notes 46/47 or 48/49 with wheel strobe)
+        if is_wheel_rotation and note in (46, 47, 48, 49):
+            direction = -1 if note in (46, 48) else 1
             mode = self.get_wheel_mode()
             if mode == "monitor":
-                if self.uad.nudge_monitor_db(direction * 1.0):
-                    disp_str = f"MONITOR: {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "MONITOR: MUTED"
-                    self.show_temp_hud(f">>> {disp_str} <<<", duration=1.2)
+                changed = self.uad.nudge_monitor_db(direction * 1.0)
+                disp_str = f"MONITOR: {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "MONITOR: MUTED"
+                self.show_temp_hud(f">>> {disp_str} <<<", duration=1.2)
+                if changed:
                     spk_str = f"Monitor {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "Monitor Muted"
                     self.voice.speak_debounced(spk_str, delay=0.35)
+                else:
+                    if direction > 0:
+                        self.voice.speak_debounced("Monitor maximum 0 dB", delay=0.35)
+                    else:
+                        self.voice.speak_debounced("Monitor minimum -96 dB", delay=0.35)
                 return
             else:
                 self.bank_by(direction)
@@ -664,11 +669,17 @@ class MCUEngine:
 
             mode = self.get_wheel_mode()
             if mode == "monitor":
-                if self.uad.nudge_monitor_db(delta * 1.0):
-                    disp_str = f"MONITOR: {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "MONITOR: MUTED"
-                    self.show_temp_hud(f">>> {disp_str} <<<", duration=1.2)
+                changed = self.uad.nudge_monitor_db(delta * 1.0)
+                disp_str = f"MONITOR: {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "MONITOR: MUTED"
+                self.show_temp_hud(f">>> {disp_str} <<<", duration=1.2)
+                if changed:
                     spk_str = f"Monitor {self.uad.monitor_level_db:+.1f} dB" if not self.uad.monitor_mute else "Monitor Muted"
                     self.voice.speak_debounced(spk_str, delay=0.35)
+                else:
+                    if delta > 0:
+                        self.voice.speak_debounced("Monitor maximum 0 dB", delay=0.35)
+                    else:
+                        self.voice.speak_debounced("Monitor minimum -96 dB", delay=0.35)
             else:
                 self.bank_by(delta)
 
