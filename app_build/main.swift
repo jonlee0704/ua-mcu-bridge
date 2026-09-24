@@ -12,7 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     
     var currentPort: Int = 9
     var isRunning: Bool = false
-    var currentWheelMode: String = "channel"
+    var currentWheelMode: String = "monitor"
     var isSpeechEnabled: Bool = true
     let configFileURL: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".uamcu_config.json")
@@ -39,7 +39,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 isSpeechEnabled = speech
             }
         } else {
-            currentWheelMode = UserDefaults.standard.string(forKey: "UAMCUWheelMode") ?? "channel"
+            currentWheelMode = UserDefaults.standard.string(forKey: "UAMCUWheelMode") ?? "monitor"
             isSpeechEnabled = UserDefaults.standard.object(forKey: "UAMCUSpeechFeedback") as? Bool ?? true
         }
     }
@@ -196,19 +196,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Channel Wheel Mode Submenu
         readConfig()
         let wheelMenu = NSMenu()
-        let channelItem = NSMenuItem(title: "Option 1: Track Navigation (1-Track Step)", action: #selector(selectWheelModeAction(_:)), keyEquivalent: "")
-        channelItem.target = self
-        channelItem.representedObject = "channel"
-        if currentWheelMode == "channel" { channelItem.state = .on }
-        wheelMenu.addItem(channelItem)
-        
-        let monitorItem = NSMenuItem(title: "Option 2: Apollo Master Monitor Volume", action: #selector(selectWheelModeAction(_:)), keyEquivalent: "")
+        let monitorItem = NSMenuItem(title: "Option 1: Apollo Master Monitor Volume (Default)", action: #selector(selectWheelModeAction(_:)), keyEquivalent: "")
         monitorItem.target = self
         monitorItem.representedObject = "monitor"
         if currentWheelMode == "monitor" { monitorItem.state = .on }
         wheelMenu.addItem(monitorItem)
         
-        let wheelTitle = currentWheelMode == "channel" ? "Channel Wheel: 1-Track Navigation" : "Channel Wheel: Apollo Monitor Vol"
+        let channelItem = NSMenuItem(title: "Option 2: Track Navigation (1-Track Step)", action: #selector(selectWheelModeAction(_:)), keyEquivalent: "")
+        channelItem.target = self
+        channelItem.representedObject = "channel"
+        if currentWheelMode == "channel" { channelItem.state = .on }
+        wheelMenu.addItem(channelItem)
+        
+        let wheelTitle = currentWheelMode == "monitor" ? "Channel Wheel: Apollo Monitor Vol" : "Channel Wheel: 1-Track Navigation"
         let wheelParentItem = NSMenuItem(title: wheelTitle, action: nil, keyEquivalent: "")
         wheelParentItem.submenu = wheelMenu
         menu.addItem(wheelParentItem)

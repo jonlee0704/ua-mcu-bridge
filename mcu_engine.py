@@ -18,15 +18,15 @@ CONFIG_PATH = os.path.expanduser("~/.uamcu_config.json")
 
 
 def load_wheel_mode() -> str:
-    """Read wheel mode preference: 'channel' (Option 1) or 'monitor' (Option 2)."""
+    """Read wheel mode preference: 'monitor' (Default: Apollo Master Volume) or 'channel' (Track Navigation)."""
     try:
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, "r") as f:
                 cfg = json.load(f)
-                return cfg.get("wheel_mode", "channel")
+                return cfg.get("wheel_mode", "monitor")
     except Exception:
         pass
-    return "channel"
+    return "monitor"
 
 
 def save_wheel_mode(mode: str):

@@ -39,8 +39,8 @@ def render_dashboard(engine: MCUEngine, uad: UADClient, midi: CoreMIDIAdapter, p
         color = "\033[93m" if "AUX" in info['name'] else "\033[95m"
         mode_label = f"{color}{info['name']} (Sends on Faders)\033[0m"
 
-    wheel_mode = getattr(engine, 'wheel_mode', 'channel')
-    wheel_label = "\033[92mTrack Nav (1-CH)\033[0m" if wheel_mode == "channel" else "\033[95mMonitor Vol\033[0m"
+    wheel_mode = getattr(engine, 'wheel_mode', 'monitor')
+    wheel_label = "\033[95mMonitor Vol\033[0m" if wheel_mode == "monitor" else "\033[92mTrack Nav (1-CH)\033[0m"
     voice_label = "\033[92mON (Speech)\033[0m" if getattr(engine, 'voice', None) and engine.voice.is_enabled() else "\033[90mOFF\033[0m"
 
     print(f" CoreMIDI: {midi_stat:<35} | UAD Mixer: {uad_stat}")

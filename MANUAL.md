@@ -128,7 +128,7 @@ flowchart LR
 3. Click the menu bar icon:
    * **Status:** Verify that it displays **`● Running (Port 9)`**.
    * **MIDI Port:** If your SSL 360 Layer is set to Port 1 or Port 5, select the matching port from the **MIDI Port** submenu. The bridge instantly restarts on the new port without dropping audio.
-   * **Channel Wheel Mode:** Select either **Option 1 (1-Track Navigation)** or **Option 2 (Apollo Master Monitor Volume)**.
+   * **Channel Wheel Mode:** Select either **Option 1 (Apollo Master Monitor Volume - Default)** or **Option 2 (1-Track Navigation)**.
 
 ---
 
@@ -209,14 +209,14 @@ The large brushed metal encoder on the right side of the UF8 can be toggled betw
 |                                                                         |
 | [ Push / Click Wheel or Select in Menu Bar ]                            |
 |                                                                         |
-| OPTION 1: 1-Track Navigation                                            |
-|   • Turn Wheel Clockwise: Shifts channel bank right by 1 track.         |
-|   • Turn Wheel Counter-Clockwise: Shifts channel bank left by 1 track.  |
-|                                                                         |
-| OPTION 2: Apollo Master Monitor Volume                                  |
+| OPTION 1: Apollo Master Monitor Volume (Default)                        |
 |   • Turn Wheel Clockwise: Increases Master Monitor Volume by +1.0 dB.   |
 |   • Turn Wheel Counter-Clockwise: Decreases Monitor Volume by -1.0 dB.  |
 |   • Real-Time HUD banner pops up on UF8 LCD: ">>> MONITOR: -24.0 dB <<<"|
+|                                                                         |
+| OPTION 2: 1-Track Navigation                                            |
+|   • Turn Wheel Clockwise: Shifts channel bank right by 1 track.         |
+|   • Turn Wheel Counter-Clockwise: Shifts channel bank left by 1 track.  |
 +-------------------------------------------------------------------------+
 ```
 
@@ -234,8 +234,8 @@ The large brushed metal encoder on the right side of the UF8 can be toggled betw
   * Nudges the fader bank by **1 single track step** at a time (e.g., Channels 1–8 $\rightarrow$ Channels 2–9 $\rightarrow$ Channels 3–10), allowing precise alignment of any input or aux track to fader 1.
   * Reaching edges announces "Start of tracks" or "End of tracks".
 * **Channel Wheel (Large Master Encoder):**
-  * In **Option 1 (Channel Navigation)**, rotating the encoder nudges the active bank by 1 single track step.
-  * In **Option 2 (Monitor Volume)**, rotating the encoder trims Apollo Main Monitor Volume $\pm 1.0\text{ dB}$.
+  * In **Option 1 (Apollo Master Volume - Default)**, rotating the encoder trims Apollo Main Monitor Volume $\pm 1.0\text{ dB}$.
+  * In **Option 2 (Track Navigation)**, rotating the encoder nudges the active bank by 1 single track step.
 
 #### Channel Layout & Aux Return Mapping:
 * **Active Input Channels:** Discovers all hardware and virtual Apollo inputs (Mic/Line, ADAT, S/PDIF, Virtual, and TALKBACK).
@@ -315,8 +315,8 @@ The native Swift application provides an unobtrusive menu bar status item:
  │    ├── Port 5 (SSL 360 DAW 2)
  │    └── Port 9 (SSL 360 DAW 3) [✔]
  ├── Channel Wheel: Apollo Monitor Vol >
- │    ├── Option 1: Track Navigation (1-Track Step)
- │    └── Option 2: Apollo Master Monitor Volume [✔]
+ │    ├── Option 1: Apollo Master Monitor Volume (Default) [✔]
+ │    └── Option 2: Track Navigation (1-Track Step)
  ├── ─────────────────────────────
  ├── Live Terminal Monitor... (Opens interactive terminal monitor)
  ├── Open Log File... (Opens ~/Library/Logs/UAMCUBridge.log)
