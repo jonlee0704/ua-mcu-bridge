@@ -294,6 +294,8 @@ class MCUEngine:
 
         # Sends on Faders (FLIP): None = Main Volumes, 0 = AUX 1, 1 = AUX 2, 2..5 = CUE 1..4
         self.active_send_idx: Optional[int] = None
+        self._last_flip_press_time: float = 0.0
+        self._flip_timer: Optional[threading.Timer] = None
         self.send_flip_led(False)
 
         # Channel Rotary Wheel Mode: 'channel' (Option 1) or 'monitor' (Option 2)
@@ -527,37 +529,88 @@ class MCUEngine:
             self.bank_by(8)
             return
 
-        # FLIP Button: 0x32 (50) -> Toggle Sends on Faders (NORMAL -> AUX 1 -> AUX 2 -> CUE 1..N -> NORMAL)
+        # FLIP Button: 0x32 (50) -> Single-press: Cycle sends; Double-press: Direct return to Main Mix
         if note == 50:
-            modes = self.get_available_send_modes()
-            if self.active_send_idx is None:
-                self.active_send_idx = modes[0][0]
-                mode_name = f"{modes[0][2]} (SENDS ON FADERS)"
-            else:
-                curr_idx = -1
-                for i, m in enumerate(modes):
-                    if m[0] == self.active_send_idx:
-                        curr_idx = i
-                        break
-                if curr_idx != -1 and curr_idx + 1 < len(modes):
-                    next_mode = modes[curr_idx + 1]
-                    self.active_send_idx = next_mode[0]
-                    mode_name = f"{next_mode[2]} (SENDS ON FADERS)"
-                else:
-                    self.active_send_idx = None
-                    mode_name = "MAIN MIX (NORMAL)"
-
-            print(f"[MCU] FLIP pressed -> Switched to {mode_name}")
-            if self.active_send_idx is not None:
-                spk_mode = mode_name.replace(" (SENDS ON FADERS)", " sends on faders")
-                self.voice.speak(spk_mode)
-            else:
-                self.voice.speak("Main mix")
-            for m in self.marquees:
-                m.reset()
-            self.send_flip_led(self.active_send_idx is not None)
-            self.refresh_all_slots()
+            self._handle_flip_button()
             return
+
+    def return_to_main_mix(self):
+        """Immediately return from any send/cue mode directly back to normal Main Mix."""
+        if self._flip_timer:
+            try:
+                self._flip_timer.cancel()
+            except Exception:
+                pass
+            self._flip_timer = None
+        self._last_flip_press_time = 0.0
+
+        if self.active_send_idx is None:
+            self.voice.speak("Main mix")
+            return
+
+        self.active_send_idx = None
+        print("[MCU] FLIP Double-Press -> Returned directly to MAIN MIX")
+        self.voice.speak("Main mix")
+        for m in self.marquees:
+            m.reset()
+        self.send_flip_led(False)
+        self.refresh_all_slots()
+
+    def cycle_send_mode(self):
+        """Cycle to the next send mode (Normal -> Aux 1 -> Aux 2 -> Cue 1..N -> Normal)."""
+        self._last_flip_press_time = 0.0
+        modes = self.get_available_send_modes()
+        if self.active_send_idx is None:
+            self.active_send_idx = modes[0][0]
+            mode_name = f"{modes[0][2]} (SENDS ON FADERS)"
+        else:
+            curr_idx = -1
+            for i, m in enumerate(modes):
+                if m[0] == self.active_send_idx:
+                    curr_idx = i
+                    break
+            if curr_idx != -1 and curr_idx + 1 < len(modes):
+                next_mode = modes[curr_idx + 1]
+                self.active_send_idx = next_mode[0]
+                mode_name = f"{next_mode[2]} (SENDS ON FADERS)"
+            else:
+                self.active_send_idx = None
+                mode_name = "MAIN MIX (NORMAL)"
+
+        print(f"[MCU] FLIP pressed -> Switched to {mode_name}")
+        if self.active_send_idx is not None:
+            spk_mode = mode_name.replace(" (SENDS ON FADERS)", " sends on faders")
+            self.voice.speak(spk_mode)
+        else:
+            self.voice.speak("Main mix")
+        for m in self.marquees:
+            m.reset()
+        self.send_flip_led(self.active_send_idx is not None)
+        self.refresh_all_slots()
+
+    def _handle_flip_button(self):
+        """Handle FLIP button: Single-press cycles send modes, Double-press returns directly to Main Mix."""
+        now = time.time()
+        if now - self._last_flip_press_time < 0.35:
+            # Double-press detected: jump directly to Main Mix!
+            if self._flip_timer:
+                try:
+                    self._flip_timer.cancel()
+                except Exception:
+                    pass
+                self._flip_timer = None
+            self.return_to_main_mix()
+        else:
+            self._last_flip_press_time = now
+            if self._flip_timer:
+                try:
+                    self._flip_timer.cancel()
+                except Exception:
+                    pass
+            timer = threading.Timer(0.30, self.cycle_send_mode)
+            timer.daemon = True
+            timer.start()
+            self._flip_timer = timer
 
     def _handle_cc(self, cc: int, val: int):
         """Handle Rotary V-Pots (CC 16..23) and Channel Rotary Wheel (CC 60)."""

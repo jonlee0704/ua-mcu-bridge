@@ -277,6 +277,7 @@ MAIN MIX (Normal fader mix restored)
 * **Visual Indication:** The FLIP button LED glows amber whenever a send mode is active.
 * **LCD Indication:** Channel names are prefixed with the active send bus (e.g., `A1:Kick`, `C1:Vocal`).
 * **Mute as Send Bypass:** In FLIP mode, the MUTE button toggles send bypass instead of channel mute.
+* **Direct Return to Main Mix (Double-Press):** Double-pressing the **`FLIP`** button at any time instantly snaps the entire surface straight back to the Main Mix without needing to cycle through all remaining cue buses.
 
 ---
 
@@ -332,7 +333,8 @@ To empower blind and low-vision audio engineers to mix, record, and navigate wit
 | **V-Pot Push** | Snap Pan to Dead Center | *"Vocal pan centered"* |
 | **MUTE Button** | Toggle Mute | *"Vocal muted"* / *"Vocal unmuted"* |
 | **SOLO Button** | Toggle Solo | *"Vocal solo on"* / *"Vocal solo off"* |
-| **FLIP Button** | Cycle Send Bus Modes | *"Aux 1 sends on faders"* / *"Main mix"* |
+| **FLIP Button (Single-Tap)** | Cycle Send Bus Modes | *"Aux 1 sends on faders"* / *"Main mix"* |
+| **FLIP Button (Double-Tap)** | Direct Return to Main Mix | *"Main mix"* |
 | **Wheel Push / Click** | Toggle Wheel Mode | *"Channel wheel mode: Apollo Monitor Volume"* / *"Track Navigation"* |
 | **Channel Wheel Nudge** | Adjust Monitor Volume | *"Monitor -18.0 dB"* (debounced by 350ms) |
 | **< BANK > / < PAGE >** | Bank 8 Channels | *"Vocal through Guitar"* |
@@ -352,7 +354,7 @@ To empower blind and low-vision audio engineers to mix, record, and navigate wit
 | **Page Left / Right** | 44 / 45 | `0x2C` / `0x2D` | Inbound | Shifts bank by 8 tracks |
 | **Bank Left / Right** | 46 / 47 | `0x2E` / `0x2F` | Inbound | Shifts bank by 8 tracks |
 | **Channel Left / Right** | 48 / 49 | `0x30` / `0x31` | Inbound | Nudges bank by 1 track |
-| **FLIP Button** | 50 | `0x32` | Bidirectional | Cycles Main $\rightarrow$ Aux 1/2 $\rightarrow$ Cue 1–4 + LED |
+| **FLIP Button** | 50 | `0x32` | Bidirectional | Single: Cycle Main $\rightarrow$ Aux 1/2 $\rightarrow$ Cue 1–4; Double: Direct Main Mix |
 | **Wheel Click / Push** | 84, 100, 101, 79 | `0x54`, `0x64`, etc. | Inbound | Toggles Wheel Mode (Option 1 $\leftrightarrow$ Option 2) |
 | **Fader Touch Sense (Ch 1–8)**| 104 – 111 | `0x68` – `0x6F` | Inbound | Capacitive touch hold (disables motor fighting)|
 
