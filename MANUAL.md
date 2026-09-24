@@ -280,7 +280,8 @@ MAIN MIX (Normal fader mix restored)
 ```
 
 * **Visual Indication:** The FLIP button LED glows amber whenever a send mode is active.
-* **LCD Indication:** Channel names are prefixed with the active send bus (e.g., `A1:Kick`, `C1:Vocal`).
+* **LCD Indication:** Channel names are prefixed with the active send bus (e.g., `A1:Kick`, `C1:Vocal`, `C1:AUX1`).
+* **Aux 1 & Aux 2 Cue Sends:** In CUE modes (`CUE 1` through `CUE 4`), the AUX 1 and AUX 2 tracks on your surface actively control the reverb/delay Aux return sends into those headphone cue mixes, including motorized fader level and MUTE bypass toggling. In AUX modes (`AUX 1` / `AUX 2`), Aux tracks show `---` to prevent impossible Aux-to-Aux routing.
 * **Mute as Send Bypass:** In FLIP mode, the MUTE button toggles send bypass instead of channel mute.
 * **Direct Return to Main Mix (Double-Press):** Double-pressing the **`FLIP`** button at any time instantly snaps the entire surface straight back to the Main Mix without needing to cycle through all remaining cue buses.
 

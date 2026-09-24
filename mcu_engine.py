@@ -346,7 +346,11 @@ class MCUEngine:
 
                     target_channel = self.bank_offset + ch
                     if self.active_send_idx is not None:
-                        self.uad.set_send_gain(target_channel, self.active_send_idx, tapered)
+                        ch_obj = self.uad.channels.get(target_channel)
+                        if getattr(ch_obj, "ch_type", "input") == "aux" and self.active_send_idx < 2:
+                            pass  # Aux returns do not send to Aux 1 or Aux 2
+                        else:
+                            self.uad.set_send_gain(target_channel, self.active_send_idx, tapered)
                     else:
                         self.uad.set_fader(target_channel, tapered)
                         if target_channel in self.uad.channels:
@@ -435,11 +439,15 @@ class MCUEngine:
             ch_obj = self.uad.channels.get(target_ch)
             ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
             if self.active_send_idx is not None:
+                if getattr(ch_obj, "ch_type", "input") == "aux":
+                    return  # Aux cue sends are stereo without pan
                 info = self.get_send_info(self.active_send_idx)
                 print(f"[MCU] V-Pot Push: Reset channel {target_ch + 1} {info['name']} Pan to Center")
                 self.uad.set_send_pan(target_ch, self.active_send_idx, 0.0)
                 self.voice.speak(f"{ch_name} {info['name']} pan centered")
             else:
+                if getattr(ch_obj, "ch_type", "input") == "aux":
+                    return  # Aux return is stereo without pan
                 print(f"[MCU] V-Pot Push: Reset channel {target_ch + 1} Pan to Center")
                 self.uad.set_pan(target_ch, 0.0)
                 self._update_lcd_row2()
@@ -454,6 +462,8 @@ class MCUEngine:
             ch_obj = self.uad.channels.get(target_ch)
             ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
             if self.active_send_idx is not None:
+                if getattr(ch_obj, "ch_type", "input") == "aux" and self.active_send_idx < 2:
+                    return  # Aux returns do not send to Aux 1 or Aux 2
                 send = ch_obj.sends.setdefault(self.active_send_idx, UADSend(self.active_send_idx)) if ch_obj else None
                 new_byp = not (send.bypass if send else False)
                 self.uad.set_send_bypass(target_ch, self.active_send_idx, new_byp)
@@ -624,6 +634,8 @@ class MCUEngine:
                 delta = val & 0x3F
 
             ch_obj = self.uad.channels.get(target_ch)
+            if getattr(ch_obj, "ch_type", "input") == "aux":
+                return  # Aux master return and cue sends are stereo without pan
             if self.active_send_idx is not None:
                 send = ch_obj.sends.setdefault(self.active_send_idx, UADSend(self.active_send_idx)) if ch_obj else None
                 current_pan = send.pan if send else 0.0
@@ -729,10 +741,13 @@ class MCUEngine:
                     else:
                         send = ch.sends.get(self.active_send_idx)
                         gain_db = send.gain_db if send else -144.0
-                        pan = send.pan if send else 0.0
                         byp = send.bypass if send else False
                         byp_str = ", bypassed" if byp else ""
-                        self.voice.speak(f"{info['name']}, {ch_name}, {format_db_speech(gain_db)}, {format_pan_speech(pan)}{byp_str}")
+                        if getattr(ch, "ch_type", "input") == "aux":
+                            self.voice.speak(f"{info['name']}, {ch_name}, {format_db_speech(gain_db)}{byp_str}")
+                        else:
+                            pan = send.pan if send else 0.0
+                            self.voice.speak(f"{info['name']}, {ch_name}, {format_db_speech(gain_db)}, {format_pan_speech(pan)}{byp_str}")
                 else:
                     db_val = getattr(ch, 'fader_db', None)
                     if db_val is None:

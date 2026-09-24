@@ -257,6 +257,7 @@ class UADClient:
                 self.send_command(f"sub {dev_path}/Solo/value")
                 for s_idx in range(6):
                     self.send_command(f"get {dev_path}/sends/{s_idx}")
+                    self.send_command(f"sub {dev_path}/sends/{s_idx}/Gain/value")
                     self.send_command(f"sub {dev_path}/sends/{s_idx}/GainTapered/value")
                     self.send_command(f"sub {dev_path}/sends/{s_idx}/Pan/value")
                     self.send_command(f"sub {dev_path}/sends/{s_idx}/Bypass/value")
@@ -296,8 +297,8 @@ class UADClient:
                 # Aux Cue sends (indices 0..3 map to MCU CUE 1..4, i.e. send_mode 2..5)
                 for cue_idx in range(4):
                     self.send_command(f"get {dev_path}/sends/{cue_idx}")
+                    self.send_command(f"sub {dev_path}/sends/{cue_idx}/Gain/value")
                     self.send_command(f"sub {dev_path}/sends/{cue_idx}/GainTapered/value")
-                    self.send_command(f"sub {dev_path}/sends/{cue_idx}/Pan/value")
                     self.send_command(f"sub {dev_path}/sends/{cue_idx}/Bypass/value")
 
             self.channels = new_channels
@@ -584,12 +585,11 @@ class UADClient:
         ch = self.channels.get(ch_id)
         if not ch or not ch.dev_path:
             return
-        if ch.ch_type == "aux" and send_idx < 2:
-            return
+        if ch.ch_type == "aux":
+            return  # Aux sends to Cues are stereo without pan
         val = max(-1.0, min(1.0, float(value)))
         fid = self._next_func_id()
-        target_send_idx = (send_idx - 2) if ch.ch_type == "aux" else send_idx
-        cmd = f"set {ch.dev_path}/sends/{target_send_idx}/Pan/value?context_type=main&func_id={fid} {val:.4f}"
+        cmd = f"set {ch.dev_path}/sends/{send_idx}/Pan/value?context_type=main&func_id={fid} {val:.4f}"
         self.send_command(cmd)
         send = ch.sends.setdefault(send_idx, UADSend(send_idx))
         send.pan = val
