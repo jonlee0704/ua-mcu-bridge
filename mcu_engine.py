@@ -724,12 +724,15 @@ class MCUEngine:
                 ch_name = ch.name.strip() or f"Channel {ch_id + 1}"
                 if self.active_send_idx is not None:
                     info = self.get_send_info(self.active_send_idx)
-                    send = ch.sends.get(self.active_send_idx)
-                    gain_db = send.gain_db if send else -144.0
-                    pan = send.pan if send else 0.0
-                    byp = send.bypass if send else False
-                    byp_str = ", bypassed" if byp else ""
-                    self.voice.speak(f"{info['name']}, {ch_name}, {format_db_speech(gain_db)}, {format_pan_speech(pan)}{byp_str}")
+                    if getattr(ch, "ch_type", "input") == "aux" and self.active_send_idx < 2:
+                        self.voice.speak(f"{ch_name}, no send")
+                    else:
+                        send = ch.sends.get(self.active_send_idx)
+                        gain_db = send.gain_db if send else -144.0
+                        pan = send.pan if send else 0.0
+                        byp = send.bypass if send else False
+                        byp_str = ", bypassed" if byp else ""
+                        self.voice.speak(f"{info['name']}, {ch_name}, {format_db_speech(gain_db)}, {format_pan_speech(pan)}{byp_str}")
                 else:
                     db_val = getattr(ch, 'fader_db', None)
                     if db_val is None:
@@ -740,7 +743,10 @@ class MCUEngine:
                     if ch.solo:
                         status_parts.append("soloed")
                     stat_str = (", " + ", ".join(status_parts)) if status_parts else ""
-                    self.voice.speak(f"{ch_name}, {format_db_speech(db_val)}, {format_pan_speech(ch.pan)}{stat_str}")
+                    if getattr(ch, "ch_type", "input") == "aux":
+                        self.voice.speak(f"{ch_name}, {format_db_speech(db_val)}{stat_str}")
+                    else:
+                        self.voice.speak(f"{ch_name}, {format_db_speech(db_val)}, {format_pan_speech(ch.pan)}{stat_str}")
 
     def _handle_sel_button(self, slot: int, target_ch: int, is_down: bool):
         """Handle SEL button: Double-Press (0.0 dB), Long-Press (Lowest Level -oo dB), Single-Press (Select)."""
@@ -970,14 +976,20 @@ class MCUEngine:
             ch = self.uad.channels.get(ch_id)
             if ch:
                 if self.active_send_idx is not None:
-                    send = ch.sends.get(self.active_send_idx)
-                    gain = send.gain if send else 0.0
-                    pan = send.pan if send else 0.0
-                    byp = send.bypass if send else False
-                    self.send_fader_position(slot, gain)
-                    self.send_mute_led(slot, byp)
-                    self.send_solo_led(slot, False)
-                    self.send_vpot_led_ring(slot, pan)
+                    if getattr(ch, "ch_type", "input") == "aux" and self.active_send_idx < 2:
+                        self.send_fader_position(slot, 0.0)
+                        self.send_mute_led(slot, False)
+                        self.send_solo_led(slot, False)
+                        self.send_vpot_led_ring(slot, 0.0)
+                    else:
+                        send = ch.sends.get(self.active_send_idx)
+                        gain = send.gain if send else 0.0
+                        pan = send.pan if send else 0.0
+                        byp = send.bypass if send else False
+                        self.send_fader_position(slot, gain)
+                        self.send_mute_led(slot, byp)
+                        self.send_solo_led(slot, False)
+                        self.send_vpot_led_ring(slot, pan)
                 else:
                     self.send_fader_position(slot, ch.fader)
                     self.send_mute_led(slot, ch.mute)
@@ -1104,12 +1116,15 @@ class MCUEngine:
             ch = self.uad.channels.get(ch_id)
             if ch:
                 if self.active_send_idx is not None:
-                    send = ch.sends.get(self.active_send_idx)
-                    if send and send.bypass:
-                        levels.append(f"{'BYP':^7}")
+                    if getattr(ch, "ch_type", "input") == "aux" and self.active_send_idx < 2:
+                        levels.append(f"{'---':^7}")
                     else:
-                        db_val = send.gain_db if send else -144.0
-                        levels.append(format_db_7char(db_val))
+                        send = ch.sends.get(self.active_send_idx)
+                        if send and send.bypass:
+                            levels.append(f"{'BYP':^7}")
+                        else:
+                            db_val = send.gain_db if send else -144.0
+                            levels.append(format_db_7char(db_val))
                 else:
                     if ch.mute:
                         levels.append(f"{'MUTE':^7}")
@@ -1129,7 +1144,7 @@ class MCUEngine:
 
     def _on_uad_channel_change(self, event_type: str, ch_id: int, value):
         """Handle asynchronous state changes from Apollo Console."""
-        if event_type == "channel_list":
+        if event_type in ("channel_list", "refresh_all"):
             self.refresh_all_slots()
             return
 

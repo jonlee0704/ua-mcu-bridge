@@ -234,6 +234,11 @@ The large brushed metal encoder on the right side of the UF8 can be toggled betw
 * **Channel Buttons (`< CHANNEL >` Notes 48 / 49):**
   * Nudges the fader bank by 1 single track at a time, allowing you to align any track to fader 1.
 
+#### Channel Layout & Aux Return Mapping:
+* **Active Input Channels:** Discovers all hardware and virtual Apollo inputs (Mic/Line, ADAT, S/PDIF, Virtual, and TALKBACK).
+* **Automatic `N/A` Filtering:** Automatically filters out unused DSP matrix placeholder slots (such as `N/A 1`).
+* **Master AUX 1 & AUX 2 Returns:** Placed directly after `TALKBACK` on the mixer surface. You can bank right to them to control Aux 1 and Aux 2 master return levels with motorized faders, toggle Mute, and monitor real-time peak/RMS meter ladder LEDs. In Cue Send mode (CUE 1–4), Aux return sends to Cues can also be controlled on faders.
+
 ---
 
 ### 4.6 Channel Strip Buttons & Advanced Select Gestures
