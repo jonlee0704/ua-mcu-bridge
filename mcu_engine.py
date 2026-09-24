@@ -522,29 +522,24 @@ class MCUEngine:
                 self.bank_by(direction)
                 return
 
-        # 2. Dedicated Hardware Navigation Buttons on SSL UF8:
-        # < CHANNEL > buttons (Notes 48, 49) shift bank by 1 track
-        if note == 48:
-            self.bank_by(-1)
-            return
-        if note == 49:
-            self.bank_by(1)
-            return
-
-        # < BANK > buttons (Notes 46, 47) move 1 track step
-        if note == 46:
-            self.bank_by(-1)
-            return
-        if note == 47:
-            self.bank_by(1)
-            return
-
-        # < PAGE > buttons (Notes 44, 45) move pages like 1-8, 9-16, 17-24, 25-27
-        if note == 44:
+        # 2. Hardware PAGE buttons on SSL UF8:
+        # Move active bank in 8-channel pages (e.g. Channels 1-8 -> 9-16 -> 17-24 -> 25-27)
+        # Note 48/49 (when pressed as buttons, not rotary encoder), Note 104/105 (MCU Assign Page L/R), Note 44/45 (Page L/R)
+        if note in (48, 44, 104):
             self.page_by(-1)
             return
-        if note == 45:
+        if note in (49, 45, 105):
             self.page_by(1)
+            return
+
+        # 3. Hardware BANK buttons on SSL UF8:
+        # Nudge active bank by 1 single track step (e.g. Channels 1-8 -> 2-9 -> 3-10)
+        # Notes 46 (< BANK), 47 (BANK >), and cursor navigation 98/99
+        if note in (46, 98):
+            self.bank_by(-1)
+            return
+        if note in (47, 99):
+            self.bank_by(1)
             return
 
         # FLIP Button: 0x32 (50) -> Single-press: Cycle sends; Double-press: Direct return to Main Mix
@@ -996,6 +991,11 @@ class MCUEngine:
                 self.voice.speak_debounced(f"{first_name}", delay=0.25)
             else:
                 self.voice.speak_debounced(f"{start_num} through {end_num}", delay=0.25)
+        else:
+            if direction > 0:
+                self.voice.speak_debounced("Last page", delay=0.25)
+            else:
+                self.voice.speak_debounced("First page", delay=0.25)
 
     def bank_by(self, delta: int):
         """Shift active bank by delta tracks (1-track steps)."""
@@ -1023,6 +1023,11 @@ class MCUEngine:
                 self.voice.speak_debounced(f"{first_name}", delay=0.25)
             else:
                 self.voice.speak_debounced(f"{start_num} through {end_num}", delay=0.25)
+        else:
+            if delta > 0:
+                self.voice.speak_debounced("End of tracks", delay=0.25)
+            else:
+                self.voice.speak_debounced("Start of tracks", delay=0.25)
 
     def refresh_all_slots(self):
         """Synchronize all 8 physical faders, LEDs, and LCD rows with current bank & mode."""
