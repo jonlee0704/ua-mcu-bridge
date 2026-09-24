@@ -564,7 +564,7 @@ class MCUEngine:
             return
 
     def return_to_main_mix(self):
-        """Immediately return from any send/cue mode directly back to normal Main Mix."""
+        """Immediately return from any send/cue mode directly back to normal Main Mix and reset to the first channel (Tracks 1-8)."""
         if self._flip_timer:
             try:
                 self._flip_timer.cancel()
@@ -573,17 +573,31 @@ class MCUEngine:
             self._flip_timer = None
         self._last_flip_press_time = 0.0
 
-        if self.active_send_idx is None:
-            self.voice.speak("Main mix")
-            return
+        was_send_mode = (self.active_send_idx is not None)
+        was_offset = (self.bank_offset != 0)
 
         self.active_send_idx = None
-        print("[MCU] FLIP Double-Press -> Returned directly to MAIN MIX")
-        self.voice.speak("Main mix")
+        self.bank_offset = 0
+        self._cancel_all_sel_timers()
         for m in self.marquees:
             m.reset()
         self.send_flip_led(False)
         self.refresh_all_slots()
+
+        print("[MCU] FLIP Double-Press -> Returned directly to MAIN MIX & First Channel (Tracks 1-8)")
+        total_ch = len(self.uad.channels) if self.uad.channels else 25
+        end_num = min(8, total_ch)
+        first_ch = self.uad.channels.get(0)
+        last_ch = self.uad.channels.get(end_num - 1)
+        first_name = first_ch.name.strip() if first_ch else ""
+        last_name = last_ch.name.strip() if last_ch else ""
+
+        if was_offset and first_name and last_name:
+            self.voice.speak(f"Main mix, {first_name} through {last_name}")
+        elif was_offset:
+            self.voice.speak(f"Main mix, channel 1")
+        else:
+            self.voice.speak("Main mix")
 
     def cycle_send_mode(self):
         """Cycle to the next send mode (Normal -> Aux 1 -> Aux 2 -> Cue 1..N -> Normal)."""

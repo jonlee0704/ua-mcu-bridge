@@ -66,7 +66,7 @@ It provides bidirectional motorized fader tracking, center-screen scribble strip
 * **Sends on Faders (`FLIP` Mode) & Direct Return Gesture:**
   * Cycles through `AUX 1` $\rightarrow$ `AUX 2` $\rightarrow$ `CUE 1` $\rightarrow$ `CUE 2` $\rightarrow$ `CUE 3` $\rightarrow$ `CUE 4` $\rightarrow$ `MAIN MIX`.
   * Physical faders reposition immediately to show send levels; V-Pots adjust send pan; Mutes toggle send bypass.
-  * **Direct Main Mix Gesture:** Double-pressing the **`FLIP`** button at any time instantly snaps straight back to Main Mix without cycling through remaining cue buses.
+  * **Direct Main Mix & First Channel Gesture:** Double-pressing the **`FLIP`** button at any time instantly snaps straight back to Main Mix and resets the fader surface to the first channel (Tracks 1–8) without cycling through remaining cue buses.
 * **Real-Time VU Level Metering:**
   * Dedicated 25 FPS background poller queries live Apollo input meters (`/devices/0/inputs/{ch}/meters/0`).
   * Streams MCU Channel Pressure (`0xD0`) to the physical 16-segment ladder meters on the UF8.

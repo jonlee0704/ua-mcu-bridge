@@ -286,7 +286,7 @@ MAIN MIX (Normal fader mix restored)
 * **LCD Indication:** Channel names are prefixed with the active send bus (e.g., `A1:Kick`, `C1:Vocal`, `C1:AUX1`).
 * **Aux 1 & Aux 2 Cue Sends:** In CUE modes (`CUE 1` through `CUE 4`), the AUX 1 and AUX 2 tracks on your surface actively control the reverb/delay Aux return sends into those headphone cue mixes, including motorized fader level and MUTE bypass toggling. In AUX modes (`AUX 1` / `AUX 2`), Aux tracks show `---` to prevent impossible Aux-to-Aux routing.
 * **Mute as Send Bypass:** In FLIP mode, the MUTE button toggles send bypass instead of channel mute.
-* **Direct Return to Main Mix (Double-Press):** Double-pressing the **`FLIP`** button at any time instantly snaps the entire surface straight back to the Main Mix without needing to cycle through all remaining cue buses.
+* **Direct Return to Main Mix & First Channel (Double-Press):** Double-pressing the **`FLIP`** button at any time instantly snaps the entire surface straight back to the Main Mix and jumps directly to the first channel (Tracks 1–8), without needing to cycle through all remaining cue buses.
 
 ### 4.8 TALKBACK Channel & Studio Communication Control
 The bridge provides complete hands-on hardware control over the Apollo hardware **Talkback** microphone, enabling engineers to manage slate and studio communication without reaching for a mouse:
@@ -359,7 +359,7 @@ To empower blind and low-vision audio engineers to mix, record, and navigate wit
 | **MUTE Button** | Toggle Mute | *"Vocal muted"* / *"Vocal unmuted"* / *"TALKBACK unmuted"* |
 | **SOLO Button** | Toggle Solo | *"Vocal solo on"* / *"Vocal solo off"* |
 | **FLIP Button (Single-Tap)** | Cycle Send Bus Modes | *"Aux 1 sends on faders"* / *"Cue 1 sends on faders"* / *"Main mix"* |
-| **FLIP Button (Double-Tap)** | Direct Return to Main Mix | *"Main mix"* |
+| **FLIP Button (Double-Tap)** | Return to Main Mix & First Channel | *"Main mix, Apollo 1 through QC"* / *"Main mix"* |
 | **Wheel Push / Click** | Toggle Wheel Mode | *"Channel wheel: Apollo Monitor Volume"* / *"Track Navigation"* |
 | **Channel Wheel Nudge** | Adjust Monitor Volume | *"Monitor -18.0 d B"* / *"Monitor maximum 0 d B"* |
 | **< PAGE > Buttons** | 8-Channel Page Jump | *"Apollo 1 through QC"* / *"TALKBACK through AUX 2"* |
