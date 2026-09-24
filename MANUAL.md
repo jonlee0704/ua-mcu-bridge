@@ -335,7 +335,7 @@ To empower blind and low-vision audio engineers to mix, record, and navigate wit
 | **FLIP Button** | Cycle Send Bus Modes | *"Active mode: Aux 1 sends on faders"* / *"Active mode: Main mix"* |
 | **Wheel Push / Click** | Toggle Wheel Mode | *"Channel wheel mode: Apollo Monitor Volume"* / *"Track Navigation"* |
 | **Channel Wheel Nudge** | Adjust Monitor Volume | *"Monitor -18.0 dB"* (debounced by 350ms) |
-| **< BANK > / < PAGE >** | Bank 8 Channels | *"Bank channels 9 to 16, Vocal through Guitar"* |
+| **< BANK > / < PAGE >** | Bank 8 Channels | *"Vocal through Guitar"* |
 | **Startup / Connection** | Bridge Launch | *"Tactile Accessibility Bridge connected. Voice guidance enabled."* |
 
 ---

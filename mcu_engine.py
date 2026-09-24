@@ -898,9 +898,14 @@ class MCUEngine:
             first_name = first_ch.name.strip() if first_ch else ""
             last_name = last_ch.name.strip() if last_ch else ""
             if first_name and last_name:
-                self.voice.speak_debounced(f"Bank channels {start_num} to {end_num}, {first_name} through {last_name}", delay=0.25)
+                if first_name == last_name:
+                    self.voice.speak_debounced(f"{first_name}", delay=0.25)
+                else:
+                    self.voice.speak_debounced(f"{first_name} through {last_name}", delay=0.25)
+            elif first_name:
+                self.voice.speak_debounced(f"{first_name}", delay=0.25)
             else:
-                self.voice.speak_debounced(f"Bank channels {start_num} to {end_num}", delay=0.25)
+                self.voice.speak_debounced(f"{start_num} through {end_num}", delay=0.25)
 
     def refresh_all_slots(self):
         """Synchronize all 8 physical faders, LEDs, and LCD rows with current bank & mode."""
