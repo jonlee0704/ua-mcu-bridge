@@ -7,6 +7,7 @@ between SSL UF8 and UAD Apollo Console.
 import json
 import math
 import os
+import re
 import subprocess
 import threading
 import time
@@ -78,12 +79,12 @@ def save_speech_mode(enabled: bool):
 def format_db_speech(db: float) -> str:
     """Format dB float to clear natural speech for blind audio engineers."""
     if db <= -140.0:
-        return "minus infinity dB"
+        return "minus infinity d B"
     if abs(db) < 0.1:
-        return "zero dB"
+        return "zero d B"
     if db > 0:
-        return f"plus {db:.1f} dB"
-    return f"{db:.1f} dB"
+        return f"plus {db:.1f} d B"
+    return f"{db:.1f} d B"
 
 
 def format_pan_speech(pan: float) -> str:
@@ -105,6 +106,14 @@ class VoiceAnnouncer:
         self._lock = threading.Lock()
         self._debounce_timer: Optional[threading.Timer] = None
 
+    @staticmethod
+    def _sanitize_for_speech(text: str) -> str:
+        """Ensure 'dB' is spoken as the letters 'd B' instead of expanding to 'decibels'."""
+        text = re.sub(r'(\d|\b)dB\b', r'\1 d B', text)
+        text = re.sub(r'(\d|\b)db\b', r'\1 d B', text)
+        text = re.sub(r'(\d|\b)DB\b', r'\1 d B', text)
+        return re.sub(r'\s+', ' ', text).strip()
+
     def is_enabled(self) -> bool:
         return load_speech_mode()
 
@@ -112,6 +121,8 @@ class VoiceAnnouncer:
         """Speak the given text if voice guidance is enabled. Non-blocking."""
         if not self.is_enabled() or not text:
             return
+
+        text = self._sanitize_for_speech(text)
 
         with self._lock:
             if self._debounce_timer:
