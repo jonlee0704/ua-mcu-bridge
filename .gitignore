@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Logs
+*.log
+Library/Logs/
+
+# macOS
+.DS_Store
+*.app/
+app_build/*.iconset/
+app_build/UAMCUBridge
+scratch/
