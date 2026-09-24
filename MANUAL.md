@@ -288,9 +288,24 @@ MAIN MIX (Normal fader mix restored)
 * **Mute as Send Bypass:** In FLIP mode, the MUTE button toggles send bypass instead of channel mute.
 * **Direct Return to Main Mix (Double-Press):** Double-pressing the **`FLIP`** button at any time instantly snaps the entire surface straight back to the Main Mix without needing to cycle through all remaining cue buses.
 
+### 4.8 TALKBACK Channel & Studio Communication Control
+The bridge provides complete hands-on hardware control over the Apollo hardware **Talkback** microphone, enabling engineers to manage slate and studio communication without reaching for a mouse:
+
+* **Automatic Talkback Discovery:** The bridge identifies the hardware Apollo Talkback channel (`TALKBACK`) from the UA Mixer Engine and integrates it seamlessly into the mixer surface.
+* **Surface Layout & Filtering:** 
+  * Positioned immediately following all tracking inputs and directly preceding Master `AUX 1` and `AUX 2` returns (e.g., Channel 25 in a standard 27-channel configuration).
+  * Automatically filters out internal DSP matrix dummy slots (such as `N/A 1`), ensuring Talkback and Aux returns remain directly accessible on the same 8-fader bank (Channels 25–27).
+* **Motorized Level Control:** Physical 100mm motorized fader tracks and sets the Talkback microphone level in Apollo Console with 14-bit pitch bend precision.
+* **Hardware Mute / Talkback Engage:** The channel **MUTE** button acts as a tactile Talkback Mute switch with an instant red tally LED indicator and voice confirmation (*"TALKBACK muted"* / *"TALKBACK unmuted"*).
+* **Select Gestures:** 
+  * **Double-Tap SEL:** Snaps the Talkback level instantly to **`0.0 dB` (Unity Gain)**.
+  * **Long-Press SEL (> 0.5s):** Drops the Talkback level smoothly to **`-oo dB` (Muted Floor)**.
+* **Live Hardware VU Metering:** Streams real-time speech level metering to the scribble strip 16-segment LED ladder, allowing immediate visual and tactile confirmation of slate voice levels.
+* **Non-Visual Speech Feedback:** Announces Talkback status clearly (*"TALKBACK, -12.0 d B"*, *"TALKBACK through AUX 2"*) so blind engineers always know when communication is live.
+
 ---
 
-### 4.8 Real-Time Hardware VU Level Metering
+### 4.9 Real-Time Hardware VU Level Metering
 * **25 FPS Polling Engine:** A lightweight background thread queries live audio input meters (`/devices/0/inputs/{ch}/meters/0`) from the UA Mixer Engine.
 * **Hardware LED Ladders:** Streams MCU Channel Pressure packets (`0xD0`) to illuminate the physical VU meters on the UF8 scribble strip.
 * **Acoustically Calibrated Scale:** Perfectly calibrated to Apollo Console markings:
@@ -298,7 +313,7 @@ MAIN MIX (Normal fader mix restored)
 
 ---
 
-### 4.9 Native macOS Menu Bar Application
+### 4.10 Native macOS Menu Bar Application
 The native Swift application provides an unobtrusive menu bar status item:
 
 ```
@@ -326,9 +341,10 @@ The native Swift application provides an unobtrusive menu bar status item:
 
 ---
 
-### 4.10 Built-In Voice Guidance & Non-Visual Speech Feedback (Accessibility)
+### 4.11 Built-In Voice Guidance & Non-Visual Speech Feedback (Accessibility)
 To empower blind and low-vision audio engineers to mix, record, and navigate without requiring sight or even enabling macOS system VoiceOver, the bridge features a built-in, low-latency asynchronous speech synthesis system (`VoiceAnnouncer`):
 * **Self-Contained & Independent:** Uses macOS native `/usr/bin/say` at an optimized pace (`-r 210`) without any third-party screen reader requirement.
+* **Concise Decibel Pronunciation:** Automatically speaks "dB" as the concise letters **"d B"** (*"dee bee"*) rather than expanding to the lengthy word *"decibels"*, maximizing speed and clarity during active mixing.
 * **Zero Audio/MIDI Latency:** Speech operates completely asynchronously in isolated non-blocking subprocesses. Moving faders, rotating knobs, or receiving meter packets is never delayed.
 * **Instant Interruption & Debouncing:** Fast gestures immediately cancel previous utterances so spoken feedback never falls behind, and rapid continuous adjustments (such as spinning the monitor volume wheel) automatically debounce (350ms) to speak only the settled final value.
 * **Dynamic Menu Bar Toggle:** Can be toggled ON or OFF at any time via the macOS Menu Bar under **Voice Guidance**. Settings are preserved persistently in `~/.uamcu_config.json`.
@@ -336,17 +352,19 @@ To empower blind and low-vision audio engineers to mix, record, and navigate wit
 #### Spoken Interactions Table:
 | Hardware Trigger | Action / Gesture | Spoken Feedback Example |
 | :--- | :--- | :--- |
-| **SEL Button (Tap)** | Channel Selection | *"Vocal, -6.2 dB, center"* or *"Guitar, 0 dB, left 50 percent, muted"* |
-| **SEL Button (Double-Tap)** | Snap Fader to 0 dB Unity | *"Vocal reset to zero dB"* |
-| **SEL Button (Long-Press)** | Snap Fader to -oo dB Floor | *"Vocal set to minus infinity"* |
+| **SEL Button (Tap)** | Channel Selection | *"Vocal, -6.2 d B, center"* or *"TALKBACK, 0 d B, muted"* |
+| **SEL Button (Double-Tap)** | Snap Fader to 0 dB Unity | *"Vocal reset to zero d B"* / *"TALKBACK reset to zero d B"* |
+| **SEL Button (Long-Press)** | Snap Fader to -oo dB Floor | *"Vocal set to minus infinity"* / *"TALKBACK set to minus infinity"* |
 | **V-Pot Push** | Snap Pan to Dead Center | *"Vocal pan centered"* |
-| **MUTE Button** | Toggle Mute | *"Vocal muted"* / *"Vocal unmuted"* |
+| **MUTE Button** | Toggle Mute | *"Vocal muted"* / *"Vocal unmuted"* / *"TALKBACK unmuted"* |
 | **SOLO Button** | Toggle Solo | *"Vocal solo on"* / *"Vocal solo off"* |
-| **FLIP Button (Single-Tap)** | Cycle Send Bus Modes | *"Aux 1 sends on faders"* / *"Main mix"* |
+| **FLIP Button (Single-Tap)** | Cycle Send Bus Modes | *"Aux 1 sends on faders"* / *"Cue 1 sends on faders"* / *"Main mix"* |
 | **FLIP Button (Double-Tap)** | Direct Return to Main Mix | *"Main mix"* |
-| **Wheel Push / Click** | Toggle Wheel Mode | *"Channel wheel mode: Apollo Monitor Volume"* / *"Track Navigation"* |
-| **Channel Wheel Nudge** | Adjust Monitor Volume | *"Monitor -18.0 dB"* (debounced by 350ms) |
-| **< BANK > / < PAGE >** | Bank 8 Channels | *"Vocal through Guitar"* |
+| **Wheel Push / Click** | Toggle Wheel Mode | *"Channel wheel: Apollo Monitor Volume"* / *"Track Navigation"* |
+| **Channel Wheel Nudge** | Adjust Monitor Volume | *"Monitor -18.0 d B"* / *"Monitor maximum 0 d B"* |
+| **< PAGE > Buttons** | 8-Channel Page Jump | *"Apollo 1 through QC"* / *"TALKBACK through AUX 2"* |
+| **< BANK > Buttons** | 1-Track Single Step | *"Apollo 2 through Neve 1"* |
+| **Page / Bank Edges** | Boundary Reached | *"First page"* / *"Last page"* / *"Start of tracks"* / *"End of tracks"* |
 | **Startup / Connection** | Bridge Launch | *"Tactile Accessibility Bridge connected. Voice guidance enabled."* |
 
 ---

@@ -41,29 +41,45 @@ It provides bidirectional motorized fader tracking, center-screen scribble strip
   * High-resolution bidirectional tracking between physical 100mm faders and UAD Console faders (`FaderLevelTapered`).
   * Smooth logarithmic/exponential dB curve matching Apollo hardware faders.
   * **Capacitive Touch Interlock:** Suppresses motor feedback fights while your hand is actively touching a fader cap.
+* **Apollo TALKBACK Channel & Studio Slate Control:**
+  * Discovers Apollo's hardware Talkback microphone and maps it seamlessly to the mixing surface directly adjacent to tracking inputs (Channel 25).
+  * 100mm motorized fader controls Talkback level in real time with 14-bit precision.
+  * Channel **MUTE** button acts as a tactile Talkback Mute switch with instant red tally LED and voice feedback (*"TALKBACK unmuted"* / *"TALKBACK muted"*).
+  * Real-time 16-segment VU meter ladder on the scribble strip displays live talkback microphone voice levels.
+  * Internal DSP matrix dummy slots (such as `N/A 1`) are automatically filtered out.
+* **Master AUX 1 & AUX 2 Returns on Faders:**
+  * Master Aux returns sit directly adjacent to Talkback on the mixer surface (Channels 26 and 27).
+  * Motorized faders adjust Aux master return levels with live peak/RMS VU ladder metering and Mute toggling.
+  * Fully routable into headphone cue mixes during CUE send modes.
 * **Centered LCD Scribble Strips with Marquee Scrolling:**
   * **Screen Center Alignment:** Channel names are displayed prominently in the center of the UF8 LCD displays (SysEx offset `56`).
   * **dB / Status Readouts:** Precise dB readouts and status banners are displayed directly below channel names (SysEx offset `0`).
   * **Dual SysEx Broadcast:** Simultaneously transmits to both Logic Control (`0x10`) and MCU (`0x14`) formats.
   * **Smooth 4 Hz Marquee:** Long track names (> 7 characters) scroll smoothly with initial and trailing pause holds.
-* **Channel Rotary Wheel (Dual Operating Modes):**
-  * **Option 1 (Track Navigation):** Nudges fader banking by 1 track per click.
-  * **Option 2 (Apollo Master Monitor Volume):** Commands Apollo Master Monitor level directly in clean 1.0 dB increments with an instant on-screen HUD readout.
-  * Toggle modes by pressing the wheel down or using the menu bar icon.
-* **Sends on Faders (`FLIP` Mode):**
+* **Channel Rotary Wheel (Default: Apollo Master Monitor Volume):**
+  * **Option 1 (Default: Apollo Master Monitor Volume):** Trims Apollo Main Monitor volume by $\pm 1.0\text{ dB}$ per tick with instant on-screen HUD readout (`>>> MONITOR: -24.0 dB <<<`) and debounced spoken confirmation.
+  * **Option 2 (Track Navigation):** Nudges fader banking by 1 track per tick.
+  * Toggle modes by pressing the wheel down or using the macOS menu bar icon.
+* **Dedicated Navigation Controls (PAGE vs BANK):**
+  * **PAGE Buttons (`< PAGE >`):** Jumps the fader surface in clean **8-channel pages** (1–8 $\rightarrow$ 9–16 $\rightarrow$ 17–24 $\rightarrow$ 25–27) with vocal span announcements (*"Apollo 1 through QC"*, *"TALKBACK through AUX 2"*) and boundary alerts (*"First page"*, *"Last page"*).
+  * **BANK Buttons (`< BANK >`):** Nudges faders by **1 single track step** at a time (1–8 $\rightarrow$ 2–9 $\rightarrow$ 3–10) with edge notifications (*"Start of tracks"*, *"End of tracks"*).
+* **Sends on Faders (`FLIP` Mode) & Direct Return Gesture:**
   * Cycles through `AUX 1` $\rightarrow$ `AUX 2` $\rightarrow$ `CUE 1` $\rightarrow$ `CUE 2` $\rightarrow$ `CUE 3` $\rightarrow$ `CUE 4` $\rightarrow$ `MAIN MIX`.
   * Physical faders reposition immediately to show send levels; V-Pots adjust send pan; Mutes toggle send bypass.
+  * **Direct Main Mix Gesture:** Double-pressing the **`FLIP`** button at any time instantly snaps straight back to Main Mix without cycling through remaining cue buses.
 * **Real-Time VU Level Metering:**
   * Dedicated 25 FPS background poller queries live Apollo input meters (`/devices/0/inputs/{ch}/meters/0`).
   * Streams MCU Channel Pressure (`0xD0`) to the physical 16-segment ladder meters on the UF8.
 * **Built-In Voice Guidance & Non-Visual Speech Feedback (Accessibility):**
   * Built-in asynchronous speech synthesis speaks channel names, dB levels, pan positions, mute/solo states, and menu selections.
+  * **Concise "d B" Pronunciation:** Speeches pronounce "dB" as the letters **"d B"** (*"dee bee"*) rather than the lengthy word *"decibels"*.
   * Completely independent of macOS system VoiceOver — works out of the box for screenless audio operation.
   * Instant gesture interruption and intelligent debouncing (350ms for rotary monitor wheel) ensure speech never lags behind physical mixing.
   * Can be toggled ON or OFF directly from the native macOS menu bar status icon.
 * **Native macOS Menu Bar App:**
   * Clean status indicator (Green = Running, Red = Stopped).
   * Instant port switching (Ports 1–12; default is Port 9).
+  * Channel Wheel mode selector (Option 1: Apollo Monitor Volume / Option 2: Track Nav).
   * Voice Guidance setting toggle (Enabled / Disabled).
   * Direct access to Live Terminal Monitor and log files.
 * **Zero External Python Dependencies:**
