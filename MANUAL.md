@@ -303,9 +303,40 @@ The bridge provides complete hands-on hardware control over the Apollo hardware 
 * **Live Hardware VU Metering:** Streams real-time speech level metering to the scribble strip 16-segment LED ladder, allowing immediate visual and tactile confirmation of slate voice levels.
 * **Non-Visual Speech Feedback:** Announces Talkback status clearly (*"TALKBACK, -12.0 d B"*, *"TALKBACK through AUX 2"*) so blind engineers always know when communication is live.
 
+### 4.9 Preamp Focus / Channel Inspector Mode (Concept 1: Unison Preamp & Hardware Controls)
+Pressing the **`CHANNEL`** button (Note 40) or **`PLUG-IN`** button (Note 43) expands the selected Apollo track across all 8 physical fader slots on the SSL UF8. This dedicated inspector mode gives recording engineers tactile, physical control over Universal Audio analog preamps and Unison modeling technology:
+
+```
+[Slot 1]       [Slot 2]       [Slot 3]       [Slot 4]       [Slot 5]       [Slot 6]       [Slot 7]       [Slot 8]
+ PREAMP         +48V            PAD           LOWCUT          PHASE         SOURCE         OUTPUT         UNISON
++35.0dB        +48V ON        -20 dB          75 Hz          NORMAL          MIC           0.0 dB         ACTIVE
+(Motor Fader)  (Double-Tap)   (Pad Toggle)   (Filter Cut)   (Polarity Ø)   (Mic/Line)     (Track Vol)    (DSP Bypass)
+```
+
+* **Surface Layout Across 8 Physical Slots:**
+  1. **Slot 1 (Preamp Gain):** Motorized 100mm fader provides continuous 14-bit tactile tracking of Apollo analog hardware gain (+10.0 to +65.0 dB). V-Pot 1 provides fine rotary trim (+/- 1.0 dB per tick) with LED ring position, and pushing V-Pot 1 resets gain to minimum (+10.0 dB).
+  2. **Slot 2 (+48V Phantom Power with Safety Double-Tap Interlock):**
+     * **Safety Protection for Delicate Ribbon & Vintage Microphones:** Turning ON +48V requires a deliberate double-tap on Mute 2 or SEL 2 within 0.85 seconds. The first tap triggers an immediate spoken warning: *"Warning: Press again to confirm 48 volt phantom power"*. A second tap confirms and engages phantom power (*"Plus 48 volts enabled"*).
+     * **Immediate Disengagement:** Turning OFF +48V requires only a single tap (*"Plus 48 volts off"*).
+     * Mute 2 tally LED illuminates vibrant RED when +48V is engaged.
+  3. **Slot 3 (-20 dB Pad):** Mute 3 or SEL 3 toggles the hardware input attenuation pad with voice confirmation (*"Pad minus 20 d B on"* / *"Pad off"*) and RED tally LED.
+  4. **Slot 4 (High-Pass / Low-Cut Filter - 75 Hz):** Mute 4 or SEL 4 engages Apollo's 75 Hz high-pass filter (*"Low cut filter 75 Hertz on"* / *"Low cut off"*).
+  5. **Slot 5 (Phase Invert - Ø):** Mute 5 or SEL 5 toggles phase polarity invert (*"Phase inverted"* / *"Phase normal"*).
+  6. **Slot 6 (Input Source: Mic vs. Line vs. Hi-Z):** Mute 5, SEL 5, or rotating V-Pot 5 toggles the input source between Mic and Line. If an electric guitar or bass is physically plugged into the Apollo front-panel Hi-Z jack, the bridge automatically reports *"Hi-Z instrument input locked by front panel jack"*.
+  7. **Slot 7 (Output Channel Level & Pan):** Motorized fader 7 tracks the channel output fader. V-Pot 7 adjusts channel pan (pushing V-Pot 7 centers pan). Mute 7 mutes channel output, and double-tapping SEL 7 resets output level to 0.0 dB.
+  8. **Slot 8 (Unison Analog Modeling Plug-in):** Displays the loaded Unison plug-in name (e.g. `610-B`, `NEVE107`, `API-VIS`). Mute 8 or SEL 8 toggles Unison DSP power/bypass (*"UA 610-B active"* / *"UA 610-B bypassed"*). If no Unison plug-in is inserted, the LCD displays `EMPTY` and announces *"No Unison plugin inserted"*.
+
+* **Channel Stepping in Preamp Focus Mode:**
+  * While in Preamp Focus Mode, pressing **`< BANK >`** (Notes 46/47) or **`< PAGE >`** (Notes 48/49), or rotating the Master Jog Wheel, steps directly between analog preamp channels (e.g., Apollo 1 $\longleftrightarrow$ Apollo 2) with voice announcements (*"Focused on Apollo 2"*).
+  * The entire 8-fader surface instantly updates to reflect the newly selected preamp channel.
+
+* **Exiting Preamp Focus Mode:**
+  * Pressing **`CHANNEL`** (Note 40) or **`PLUG-IN`** (Note 43) exits focus mode and returns to standard 8-channel mix view.
+  * **Emergency Double-Press FLIP:** Double-pressing the **`FLIP`** button at any time instantly escapes Preamp Focus Mode and returns straight to the Main Mix at Track 1.
+
 ---
 
-### 4.9 Real-Time Hardware VU Level Metering
+### 4.10 Real-Time Hardware VU Level Metering
 * **25 FPS Polling Engine:** A lightweight background thread queries live audio input meters (`/devices/0/inputs/{ch}/meters/0`) from the UA Mixer Engine.
 * **Hardware LED Ladders:** Streams MCU Channel Pressure packets (`0xD0`) to illuminate the physical VU meters on the UF8 scribble strip.
 * **Acoustically Calibrated Scale:** Perfectly calibrated to Apollo Console markings:
@@ -313,7 +344,7 @@ The bridge provides complete hands-on hardware control over the Apollo hardware 
 
 ---
 
-### 4.10 Native macOS Menu Bar Application
+### 4.11 Native macOS Menu Bar Application
 The native Swift application provides an unobtrusive menu bar status item:
 
 ```
@@ -341,7 +372,7 @@ The native Swift application provides an unobtrusive menu bar status item:
 
 ---
 
-### 4.11 Built-In Voice Guidance & Non-Visual Speech Feedback (Accessibility)
+### 4.12 Built-In Voice Guidance & Non-Visual Speech Feedback (Accessibility)
 To empower blind and low-vision audio engineers to mix, record, and navigate without requiring sight or even enabling macOS system VoiceOver, the bridge features a built-in, low-latency asynchronous speech synthesis system (`VoiceAnnouncer`):
 * **Self-Contained & Independent:** Uses macOS native `/usr/bin/say` at an optimized pace (`-r 210`) without any third-party screen reader requirement.
 * **Concise Decibel Pronunciation:** Automatically speaks "dB" as the concise letters **"d B"** (*"dee bee"*) rather than expanding to the lengthy word *"decibels"*, maximizing speed and clarity during active mixing.

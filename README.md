@@ -41,6 +41,18 @@ It provides bidirectional motorized fader tracking, center-screen scribble strip
   * High-resolution bidirectional tracking between physical 100mm faders and UAD Console faders (`FaderLevelTapered`).
   * Smooth logarithmic/exponential dB curve matching Apollo hardware faders.
   * **Capacitive Touch Interlock:** Suppresses motor feedback fights while your hand is actively touching a fader cap.
+* **Preamp Focus & Unison Channel Inspector Mode (Concept 1):**
+  * Pressing **`CHANNEL`** (Note 40) or **`PLUG-IN`** (Note 43) expands the selected Apollo track across all 8 physical fader slots on the SSL UF8.
+  * **Slot 1:** Motorized Preamp Gain (+10 to +65 dB) with 14-bit tactile tracking and fine V-Pot rotary trim (+/- 1 dB).
+  * **Slot 2:** +48V Phantom Power with a **Safety Double-Tap Interlock** protecting delicate ribbon microphones from accidental phantom power surges.
+  * **Slot 3:** -20 dB Pad toggle with red tally LED.
+  * **Slot 4:** 75 Hz High-Pass Low-Cut filter toggle.
+  * **Slot 5:** Phase Invert (Ø) polarity toggle.
+  * **Slot 6:** Input Source selector (Mic vs. Line vs. front-panel Hi-Z).
+  * **Slot 7:** Output Level motorized fader and V-Pot pan.
+  * **Slot 8:** Unison DSP plug-in power & bypass toggle with live plugin name display (`610-B`, `NEVE107`, `API-VIS`).
+  * **Preamp Channel Stepping:** Pressing **`< BANK >`** or rotating the Master Jog Wheel steps directly between preamp channels (Apollo 1 $\longleftrightarrow$ Apollo 2).
+  * **Instant Return:** Double-pressing **`FLIP`** instantly escapes focus mode and returns directly to the Main Mix at Track 1.
 * **Apollo TALKBACK Channel & Studio Slate Control:**
   * Discovers Apollo's hardware Talkback microphone and maps it seamlessly to the mixing surface directly adjacent to tracking inputs (Channel 25).
   * 100mm motorized fader controls Talkback level in real time with 14-bit precision.

@@ -309,6 +309,11 @@ class MCUEngine:
         self._flip_timer: Optional[threading.Timer] = None
         self.send_flip_led(False)
 
+        # Preamp Focus / Channel Inspector Mode (Concept 1)
+        self.preamp_focus_mode: bool = False
+        self.preamp_focus_channel: int = 0
+        self._48v_arm_time: float = 0.0
+
         # Channel Rotary Wheel Mode: 'channel' (Option 1) or 'monitor' (Option 2)
         self._config_mtime: float = 0.0
         self.wheel_mode: str = load_wheel_mode()
@@ -355,20 +360,23 @@ class MCUEngine:
                     val_14bit = (msb << 7) | lsb
                     tapered = val_14bit / 16383.0
 
-                    target_channel = self.bank_offset + ch
-                    if self.active_send_idx is not None:
-                        ch_obj = self.uad.channels.get(target_channel)
-                        if getattr(ch_obj, "ch_type", "input") == "aux" and self.active_send_idx < 2:
-                            pass  # Aux returns do not send to Aux 1 or Aux 2
-                        else:
-                            self.uad.set_send_gain(target_channel, self.active_send_idx, tapered)
+                    if self.preamp_focus_mode:
+                        self._handle_preamp_fader(ch, tapered)
                     else:
-                        self.uad.set_fader(target_channel, tapered)
-                        if target_channel in self.uad.channels:
-                            self.uad.channels[target_channel].fader_db = tapered_to_db(tapered)
-                    self._update_lcd_row2()
-                    if self.zero_mode_held or self.zero_mode_latched:
-                        self.send_sel_led(ch, self.is_channel_at_zero(target_channel))
+                        target_channel = self.bank_offset + ch
+                        if self.active_send_idx is not None:
+                            ch_obj = self.uad.channels.get(target_channel)
+                            if getattr(ch_obj, "ch_type", "input") == "aux" and self.active_send_idx < 2:
+                                pass  # Aux returns do not send to Aux 1 or Aux 2
+                            else:
+                                self.uad.set_send_gain(target_channel, self.active_send_idx, tapered)
+                        else:
+                            self.uad.set_fader(target_channel, tapered)
+                            if target_channel in self.uad.channels:
+                                self.uad.channels[target_channel].fader_db = tapered_to_db(tapered)
+                        self._update_lcd_row2()
+                        if self.zero_mode_held or self.zero_mode_latched:
+                            self.send_sel_led(ch, self.is_channel_at_zero(target_channel))
                     i += 3
                     continue
 
@@ -416,6 +424,23 @@ class MCUEngine:
             self._wheel_strobe_active = is_down
             if is_down:
                 self._last_wheel_strobe = time.time()
+            return
+
+        # Channel / Plug-in buttons: Note 40 (0x28) / Note 43 (0x2B) -> Toggle Preamp Focus Mode
+        if note in (40, 43):
+            if is_down:
+                self.toggle_preamp_focus_mode()
+            return
+
+        # FLIP Button: 0x32 (50) -> Single-press: Cycle sends; Double-press: Direct return to Main Mix
+        if note == 50:
+            if is_down:
+                self._handle_flip_button()
+            return
+
+        # If in Preamp Focus Mode, delegate buttons to _handle_preamp_note
+        if self.preamp_focus_mode:
+            self._handle_preamp_note(note, is_down)
             return
 
         # ZERO / AUTO modifier buttons:
@@ -558,13 +583,8 @@ class MCUEngine:
             self.bank_by(1)
             return
 
-        # FLIP Button: 0x32 (50) -> Single-press: Cycle sends; Double-press: Direct return to Main Mix
-        if note == 50:
-            self._handle_flip_button()
-            return
-
     def return_to_main_mix(self):
-        """Immediately return from any send/cue mode directly back to normal Main Mix and reset to the first channel (Tracks 1-8)."""
+        """Immediately return from any send/cue mode or preamp focus mode directly back to normal Main Mix and reset to the first channel (Tracks 1-8)."""
         if self._flip_timer:
             try:
                 self._flip_timer.cancel()
@@ -573,8 +593,13 @@ class MCUEngine:
             self._flip_timer = None
         self._last_flip_press_time = 0.0
 
+        was_preamp_mode = self.preamp_focus_mode
         was_send_mode = (self.active_send_idx is not None)
         was_offset = (self.bank_offset != 0)
+
+        self.preamp_focus_mode = False
+        self.send_midi(bytes([0x90, 40, 0x00]))  # CHANNEL LED off
+        self.send_midi(bytes([0x90, 43, 0x00]))  # PLUG-IN LED off
 
         self.active_send_idx = None
         self.bank_offset = 0
@@ -592,10 +617,12 @@ class MCUEngine:
         first_name = first_ch.name.strip() if first_ch else ""
         last_name = last_ch.name.strip() if last_ch else ""
 
-        if was_offset and first_name and last_name:
+        if was_preamp_mode:
+            self.voice.speak("Exiting preamp focus, Main mix")
+        elif was_offset and first_name and last_name:
             self.voice.speak(f"Main mix, {first_name} through {last_name}")
         elif was_offset:
-            self.voice.speak(f"Main mix, channel 1")
+            self.voice.speak("Main mix, channel 1")
         else:
             self.voice.speak("Main mix")
 
@@ -657,6 +684,18 @@ class MCUEngine:
 
     def _handle_cc(self, cc: int, val: int):
         """Handle Rotary V-Pots (CC 16..23) and Channel Rotary Wheel (CC 60)."""
+        if self.preamp_focus_mode:
+            if 16 <= cc <= 23:
+                slot = cc - 16
+                delta = -(val & 0x3F) if (val & 0x40) else (val & 0x3F)
+                self._handle_preamp_vpot(slot, delta)
+                return
+            elif cc == 60:
+                delta = -(val & 0x3F) if (val & 0x40) else (val & 0x3F)
+                if delta != 0:
+                    self.step_preamp_channel(delta)
+                return
+
         if 16 <= cc <= 23:
             slot = cc - 16
             target_ch = self.bank_offset + slot
@@ -1110,6 +1149,8 @@ class MCUEngine:
         """Background thread updating marquee text at 4 Hz for slots with > 7 characters."""
         while self._running:
             time.sleep(0.25)
+            if self.preamp_focus_mode:
+                continue
             with self._lock:
                 has_scrolling = any(len(m.current_text) > 7 for m in self.marquees)
                 if has_scrolling:
@@ -1241,10 +1282,25 @@ class MCUEngine:
     def _on_uad_channel_change(self, event_type: str, ch_id: int, value):
         """Handle asynchronous state changes from Apollo Console."""
         if event_type in ("channel_list", "refresh_all"):
-            self.refresh_all_slots()
+            if self.preamp_focus_mode:
+                self.refresh_preamp_focus_surface()
+            else:
+                self.refresh_all_slots()
             return
 
         if event_type == "monitor":
+            return
+
+        # Preamp Focus Mode routing
+        if self.preamp_focus_mode:
+            if ch_id == self.preamp_focus_channel:
+                if event_type in ("preamp", "preamp_prop", "unison", "unison_prop", "fader", "fader_db", "mute", "solo", "pan", "name"):
+                    self.refresh_preamp_focus_surface()
+                elif event_type == "meter":
+                    ch_obj = self.uad.channels.get(ch_id)
+                    is_clip = ch_obj.meter_clip if ch_obj else False
+                    self.send_meter_level(0, float(value), is_clip)
+                    self.send_meter_level(6, float(value), is_clip)
             return
 
         slot = ch_id - self.bank_offset
@@ -1292,3 +1348,398 @@ class MCUEngine:
             ch_obj = self.uad.channels.get(ch_id)
             is_clip = ch_obj.meter_clip if ch_obj else False
             self.send_meter_level(slot, float(value), is_clip)
+
+    # --- Preamp Focus / Channel Inspector Mode (Concept 1) ---
+
+    def get_preamp_channels(self) -> List[int]:
+        """Return list of channel IDs that have hardware analog preamps."""
+        preamp_ids = [
+            cid for cid, c in sorted(self.uad.channels.items())
+            if getattr(getattr(c, 'preamp', None), 'has_preamp', False)
+        ]
+        if not preamp_ids:
+            return [0, 1]
+        return preamp_ids
+
+    def toggle_preamp_focus_mode(self, target_ch: Optional[int] = None):
+        """Toggle Preamp Focus / Channel Inspector Mode (Concept 1)."""
+        if self.preamp_focus_mode:
+            self.preamp_focus_mode = False
+            self.send_midi(bytes([0x90, 40, 0x00]))  # CHANNEL LED off
+            self.send_midi(bytes([0x90, 43, 0x00]))  # PLUG-IN LED off
+            for m in self.marquees:
+                m.reset()
+            self.refresh_all_slots()
+            self.show_temp_hud(">>> EXIT PREAMP FOCUS <<<", duration=1.2)
+            self.voice.speak("Exiting preamp focus, Main mix")
+            print("[MCU] Exited Preamp Focus Mode -> Returned to Main Mix")
+        else:
+            # If in send mode, turn it off
+            if self.active_send_idx is not None:
+                self.active_send_idx = None
+                self.send_flip_led(False)
+
+            preamp_channels = self.get_preamp_channels()
+            if not preamp_channels:
+                self.voice.speak("No analog preamps detected on Apollo interface")
+                return
+
+            if target_ch is not None and target_ch in preamp_channels:
+                candidate = target_ch
+            elif self.selected_slot is not None and (self.bank_offset + self.selected_slot) in preamp_channels:
+                candidate = self.bank_offset + self.selected_slot
+            elif self.bank_offset in preamp_channels:
+                candidate = self.bank_offset
+            else:
+                candidate = preamp_channels[0]
+
+            self.preamp_focus_mode = True
+            self.preamp_focus_channel = candidate
+            self._48v_arm_time = 0.0
+
+            # Light up CHANNEL & PLUG-IN LEDs
+            self.send_midi(bytes([0x90, 40, 0x7F]))
+            self.send_midi(bytes([0x90, 43, 0x7F]))
+
+            ch = self.uad.channels.get(candidate)
+            ch_name = ch.name.strip() if ch else f"Channel {candidate + 1}"
+            plugin = ch.preamp.unison_plugin_name if ch else ""
+            plugin_str = f", Unison {plugin}" if plugin else ""
+            self.show_temp_hud(f">>> PREAMP FOCUS: {ch_name.upper()} <<<", duration=1.5)
+            self.voice.speak(f"Preamp focus: {ch_name}{plugin_str}")
+            print(f"[MCU] Entered Preamp Focus Mode on channel {candidate} ({ch_name})")
+            self.refresh_preamp_focus_surface()
+
+    def step_preamp_channel(self, delta: int):
+        """Step to previous or next preamp channel in Preamp Focus Mode."""
+        preamp_channels = self.get_preamp_channels()
+        if not preamp_channels:
+            return
+        try:
+            curr_idx = preamp_channels.index(self.preamp_focus_channel)
+        except ValueError:
+            curr_idx = 0
+
+        new_idx = max(0, min(len(preamp_channels) - 1, curr_idx + delta))
+        if new_idx != curr_idx:
+            self.preamp_focus_channel = preamp_channels[new_idx]
+            self._48v_arm_time = 0.0
+            ch = self.uad.channels.get(self.preamp_focus_channel)
+            ch_name = ch.name.strip() if ch else f"Channel {self.preamp_focus_channel + 1}"
+            plugin = ch.preamp.unison_plugin_name if ch else ""
+            plugin_str = f", {plugin}" if plugin else ""
+            self.show_temp_hud(f">>> PREAMP: {ch_name.upper()} <<<", duration=1.2)
+            self.voice.speak_debounced(f"Focused on {ch_name}{plugin_str}", delay=0.25)
+            self.refresh_preamp_focus_surface()
+        else:
+            if delta > 0:
+                self.voice.speak_debounced("Last preamp channel", delay=0.25)
+            else:
+                self.voice.speak_debounced("First preamp channel", delay=0.25)
+
+    def refresh_preamp_focus_surface(self):
+        """Update all 8 physical motorized faders, LEDs, V-Pots, and LCD scribble strips for Preamp Focus Mode."""
+        ch = self.uad.channels.get(self.preamp_focus_channel)
+        if not ch:
+            return
+        pre = ch.preamp
+
+        # Slot 0: Preamp Gain
+        self.send_fader_position(0, pre.gain_tapered)
+        self.send_mute_led(0, ch.mute)
+        self.send_solo_led(0, ch.solo)
+        self.send_sel_led(0, False)
+        gain_vpot = int(max(1, min(11, pre.gain_tapered * 10 + 1)))
+        self.send_midi(bytes([0xB0, 48, gain_vpot]))
+
+        # Slot 1: +48V Phantom Power
+        self.send_fader_position(1, 1.0 if pre.phantom_48v else 0.0)
+        self.send_mute_led(1, pre.phantom_48v)
+        self.send_solo_led(1, False)
+        self.send_sel_led(1, pre.phantom_48v)
+        self.send_midi(bytes([0xB0, 49, 11 if pre.phantom_48v else 1]))
+
+        # Slot 2: -20 dB Pad
+        self.send_fader_position(2, 1.0 if pre.pad else 0.0)
+        self.send_mute_led(2, pre.pad)
+        self.send_solo_led(2, False)
+        self.send_sel_led(2, pre.pad)
+        self.send_midi(bytes([0xB0, 50, 11 if pre.pad else 1]))
+
+        # Slot 3: High Pass / Low Cut 75 Hz
+        self.send_fader_position(3, 1.0 if pre.low_cut else 0.0)
+        self.send_mute_led(3, pre.low_cut)
+        self.send_solo_led(3, False)
+        self.send_sel_led(3, pre.low_cut)
+        self.send_midi(bytes([0xB0, 51, 11 if pre.low_cut else 1]))
+
+        # Slot 4: Phase Invert (Ø)
+        self.send_fader_position(4, 1.0 if pre.phase else 0.0)
+        self.send_mute_led(4, pre.phase)
+        self.send_solo_led(4, False)
+        self.send_sel_led(4, pre.phase)
+        self.send_midi(bytes([0xB0, 52, 11 if pre.phase else 1]))
+
+        # Slot 5: Input Source (Mic vs Line vs Hi-Z)
+        src_fader = 0.5 if pre.hiz else (1.0 if pre.iotype == "Line" else 0.0)
+        self.send_fader_position(5, src_fader)
+        self.send_mute_led(5, pre.iotype == "Line")
+        self.send_solo_led(5, False)
+        self.send_sel_led(5, pre.hiz)
+        self.send_midi(bytes([0xB0, 53, 11 if pre.iotype == "Line" else 1]))
+
+        # Slot 6: Output Fader Level & Pan
+        self.send_fader_position(6, ch.fader)
+        self.send_mute_led(6, ch.mute)
+        self.send_solo_led(6, ch.solo)
+        self.send_sel_led(6, False)
+        pan_pos = int((ch.pan + 1.0) / 2.0 * 10.0) + 1
+        self.send_midi(bytes([0xB0, 54, max(1, min(11, pan_pos))]))
+
+        # Slot 7: Unison Plug-in
+        has_unison = bool(pre.unison_plugin_name and pre.unison_plugin_name.strip() and pre.unison_plugin_name != "None")
+        self.send_fader_position(7, 1.0 if (has_unison and pre.unison_power) else 0.0)
+        self.send_mute_led(7, has_unison and not pre.unison_power)
+        self.send_solo_led(7, False)
+        self.send_sel_led(7, has_unison and pre.unison_power)
+        self.send_midi(bytes([0xB0, 55, 11 if (has_unison and pre.unison_power) else 1]))
+
+        # Row 1 (Parameter Labels)
+        if has_unison:
+            p_clean = pre.unison_plugin_name.replace("UA ", "").replace("Universal Audio ", "").strip()
+            p_label = f"{p_clean[:7]:^7}"
+        else:
+            p_label = "UNISON "
+
+        row1_slots = [
+            " PREAMP",  # Slot 0
+            "+48V   ",  # Slot 1
+            "  PAD  ",  # Slot 2
+            "LOWCUT ",  # Slot 3
+            " PHASE ",  # Slot 4
+            " SOURCE",  # Slot 5
+            " OUTPUT",  # Slot 6
+            p_label,    # Slot 7
+        ]
+        row1_text = "".join(f"{s:^7}"[:7] for s in row1_slots)
+        if row1_text != self._last_row1_text:
+            self._last_row1_text = row1_text
+            self.send_lcd_text(1, row1_text)
+
+        # Row 2 (Values & States)
+        if pre.custom_text and len(pre.custom_text.strip()) > 0 and pre.custom_text.strip() != "---":
+            gain_disp = f"{pre.custom_text.strip()[:7]:^7}"
+        else:
+            gain_disp = f"{pre.gain:+.1f}dB"
+
+        val_48v = "+48V ON" if pre.phantom_48v else "  OFF  "
+        val_pad = "-20 dB " if pre.pad else "  OFF  "
+        val_lc  = " 75 Hz " if pre.low_cut else "  OFF  "
+        val_ph  = "INVERT " if pre.phase else "NORMAL "
+        val_src = " HI-Z  " if pre.hiz else f"{pre.iotype.upper():^7}"
+        val_out = format_db_7char(ch.fader_db)
+        if not has_unison:
+            val_uni = " EMPTY "
+        else:
+            val_uni = " ACTIVE" if pre.unison_power else "BYPASS "
+
+        row2_slots = [
+            gain_disp,  # Slot 0
+            val_48v,    # Slot 1
+            val_pad,    # Slot 2
+            val_lc,     # Slot 3
+            val_ph,     # Slot 4
+            val_src,    # Slot 5
+            val_out,    # Slot 6
+            val_uni,    # Slot 7
+        ]
+        row2_text = "".join(f"{v:^7}"[:7] for v in row2_slots)
+        if row2_text != self._last_row2_text and not self._hud_active:
+            self._last_row2_text = row2_text
+            self.send_lcd_text(2, row2_text)
+
+    def _handle_preamp_fader(self, slot: int, tapered: float):
+        """Handle physical fader movements in Preamp Focus Mode."""
+        ch = self.uad.channels.get(self.preamp_focus_channel)
+        if not ch:
+            return
+        pre = ch.preamp
+
+        if slot == 0:
+            # Motorized Preamp Gain (+10 to +65 dB)
+            self.uad.set_preamp_gain(self.preamp_focus_channel, tapered)
+            gain_db = 10.0 + (tapered * 55.0)
+            pre.gain = gain_db
+            self.refresh_preamp_focus_surface()
+            self.voice.speak_debounced(f"Preamp gain {gain_db:.1f} d B", delay=0.35)
+
+        elif slot == 6:
+            # Output Channel Level
+            self.uad.set_fader(self.preamp_focus_channel, tapered)
+            ch.fader_db = tapered_to_db(tapered)
+            self.refresh_preamp_focus_surface()
+            self.voice.speak_debounced(f"Output {format_db_speech(ch.fader_db)}", delay=0.35)
+
+    def _handle_preamp_vpot(self, slot: int, delta: int):
+        """Handle rotary V-Pot turns in Preamp Focus Mode."""
+        ch = self.uad.channels.get(self.preamp_focus_channel)
+        if not ch:
+            return
+        pre = ch.preamp
+
+        if slot == 0:
+            # V-Pot 0: Fine Preamp Gain Trim (+/- 1 dB)
+            new_db = self.uad.nudge_preamp_gain_db(self.preamp_focus_channel, float(delta * 1.0))
+            self.refresh_preamp_focus_surface()
+            self.voice.speak_debounced(f"Preamp gain {new_db:.1f} d B", delay=0.35)
+
+        elif slot == 5:
+            # V-Pot 5: Toggle Mic/Line source
+            if not pre.hiz:
+                new_type = "Line" if delta > 0 else "Mic"
+                self.uad.set_preamp_iotype(self.preamp_focus_channel, new_type)
+                self.refresh_preamp_focus_surface()
+                self.voice.speak_debounced(f"Input source {new_type}", delay=0.35)
+
+        elif slot == 6:
+            # V-Pot 6: Output Channel Pan
+            new_pan = max(-1.0, min(1.0, ch.pan + (delta * 0.02)))
+            self.uad.set_pan(self.preamp_focus_channel, new_pan)
+            self.send_vpot_led_ring(6, new_pan)
+
+    def _handle_preamp_note(self, note: int, is_down: bool):
+        """Handle MCU buttons when in Preamp Focus Mode."""
+        if not is_down:
+            return
+
+        ch = self.uad.channels.get(self.preamp_focus_channel)
+        if not ch:
+            return
+        pre = ch.preamp
+
+        # Hardware Navigation: Bank L/R (46/47, 98/99), Page L/R (48/49, 44/45, 104/105)
+        # Nudges preamp focus channel to previous/next preamp channel!
+        is_wheel_rotation = self._wheel_strobe_active or (time.time() - self._last_wheel_strobe < 0.20)
+        if (is_wheel_rotation and note in (46, 47, 48, 49)) or note in (46, 47, 48, 49, 44, 45, 98, 99, 104, 105):
+            direction = -1 if note in (46, 48, 44, 98, 104) else 1
+            self.step_preamp_channel(direction)
+            return
+
+        # V-Pot Push: 0x20..0x27 (32..39)
+        if 32 <= note <= 39:
+            slot = note - 32
+            if slot == 0:
+                self.uad.set_preamp_gain_db(self.preamp_focus_channel, 10.0)
+                self.refresh_preamp_focus_surface()
+                self.voice.speak("Preamp gain reset to 10 d B")
+            elif slot == 6:
+                self.uad.set_pan(self.preamp_focus_channel, 0.0)
+                self.send_vpot_led_ring(6, 0.0)
+                self.voice.speak("Output pan centered")
+            return
+
+        # Mute Buttons: 0x10..0x17 (16..23)
+        # SEL Buttons: 0x18..0x1F (24..31)
+        slot = None
+        if 16 <= note <= 23:
+            slot = note - 16
+        elif 24 <= note <= 31:
+            slot = note - 24
+
+        if slot is not None:
+            if slot == 0:
+                if 16 <= note <= 23:
+                    new_mute = not ch.mute
+                    self.uad.set_mute(self.preamp_focus_channel, new_mute)
+                    self.send_mute_led(0, new_mute)
+                    self.voice.speak(f"{ch.name.strip()} {'muted' if new_mute else 'unmuted'}")
+                else:
+                    self.uad.set_preamp_gain_db(self.preamp_focus_channel, 10.0)
+                    self.refresh_preamp_focus_surface()
+                    self.voice.speak("Preamp gain reset to 10 d B")
+                return
+
+            elif slot == 1:
+                # Slot 1: +48V Phantom Power with Safety Double-Tap Interlock
+                now = time.time()
+                if not pre.phantom_48v:
+                    if now - self._48v_arm_time < 0.85:
+                        self.uad.set_preamp_48v(self.preamp_focus_channel, True)
+                        self._48v_arm_time = 0.0
+                        self.voice.speak("Plus 48 volts enabled")
+                        self.refresh_preamp_focus_surface()
+                    else:
+                        self._48v_arm_time = now
+                        self.voice.speak("Press again to confirm 48 volt phantom power")
+                else:
+                    self.uad.set_preamp_48v(self.preamp_focus_channel, False)
+                    self._48v_arm_time = 0.0
+                    self.voice.speak("Plus 48 volts off")
+                    self.refresh_preamp_focus_surface()
+                return
+
+            elif slot == 2:
+                # Slot 2: -20 dB Pad
+                new_pad = self.uad.toggle_preamp_pad(self.preamp_focus_channel)
+                self.voice.speak("Pad minus 20 d B on" if new_pad else "Pad off")
+                self.refresh_preamp_focus_surface()
+                return
+
+            elif slot == 3:
+                # Slot 3: Low Cut (75 Hz)
+                new_lc = self.uad.toggle_preamp_lowcut(self.preamp_focus_channel)
+                self.voice.speak("Low cut filter 75 Hertz on" if new_lc else "Low cut off")
+                self.refresh_preamp_focus_surface()
+                return
+
+            elif slot == 4:
+                # Slot 4: Phase Invert (Ø)
+                new_ph = self.uad.toggle_preamp_phase(self.preamp_focus_channel)
+                self.voice.speak("Phase inverted" if new_ph else "Phase normal")
+                self.refresh_preamp_focus_surface()
+                return
+
+            elif slot == 5:
+                # Slot 5: Input Source (Mic vs Line vs Hi-Z)
+                if pre.hiz:
+                    self.voice.speak("Hi-Z instrument input locked by front panel jack")
+                else:
+                    new_src = self.uad.toggle_preamp_iotype(self.preamp_focus_channel)
+                    self.voice.speak(f"Input source {new_src}")
+                    self.refresh_preamp_focus_surface()
+                return
+
+            elif slot == 6:
+                # Slot 6: Output Channel Level & Pan
+                if 16 <= note <= 23:
+                    new_mute = not ch.mute
+                    self.uad.set_mute(self.preamp_focus_channel, new_mute)
+                    self.send_mute_led(6, new_mute)
+                    self.voice.speak(f"{ch.name.strip()} {'muted' if new_mute else 'unmuted'}")
+                else:
+                    self.uad.set_fader(self.preamp_focus_channel, 0.7818182)
+                    self.send_fader_position(6, 0.7818182)
+                    self.refresh_preamp_focus_surface()
+                    self.voice.speak("Output reset to zero dB")
+                return
+
+            elif slot == 7:
+                # Slot 7: Unison Plug-in Power / Bypass
+                if not pre.unison_plugin_name or pre.unison_plugin_name.strip() in ("", "None"):
+                    self.voice.speak("No Unison plugin inserted")
+                else:
+                    new_pow = self.uad.toggle_unison_power(self.preamp_focus_channel)
+                    st = "active" if new_pow else "bypassed"
+                    self.voice.speak(f"{pre.unison_plugin_name} {st}")
+                    self.refresh_preamp_focus_surface()
+                return
+
+        # Solo Buttons: 0x08..0x0F (8..15)
+        if 8 <= note <= 15:
+            slot = note - 8
+            if slot in (0, 6):
+                new_solo = not ch.solo
+                self.uad.set_solo(self.preamp_focus_channel, new_solo)
+                self.send_solo_led(slot, new_solo)
+                self.voice.speak(f"{ch.name.strip()} {'solo on' if new_solo else 'solo off'}")
+            return

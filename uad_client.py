@@ -25,6 +25,26 @@ class UADSend:
         return f"<UADSend {self.index}: '{self.name}' gain={self.gain:.2f} ({self.gain_db:.1f}dB) pan={self.pan:.2f} bypass={self.bypass}>"
 
 
+class UADPreamp:
+    """Represents analog hardware preamp and Unison state for an input channel."""
+    def __init__(self):
+        self.has_preamp: bool = False
+        self.gain: float = 10.0            # dB (+10.0 to +65.0)
+        self.gain_tapered: float = 0.0     # 0.0 to 1.0
+        self.phantom_48v: bool = False     # True / False
+        self.pad: bool = False             # True / False
+        self.low_cut: bool = False         # True / False
+        self.phase: bool = False           # True / False
+        self.hiz: bool = False             # True / False
+        self.iotype: str = "Mic"           # "Mic" / "Line"
+        self.custom_text: str = ""         # Custom Unison display text
+        self.unison_plugin_name: str = ""  # Loaded Unison plugin name
+        self.unison_power: bool = True     # Unison plugin active / bypassed
+
+    def __repr__(self):
+        return f"<UADPreamp gain={self.gain:.1f}dB 48V={self.phantom_48v} Pad={self.pad} LowCut={self.low_cut} Phase={self.phase} Unison='{self.unison_plugin_name}'>"
+
+
 class UADChannel:
     def __init__(self, ch_id: int, name: str = "", fader: float = 0.0, pan: float = 0.0, mute: bool = False, solo: bool = False, ch_type: str = "input", dev_path: str = ""):
         self.id = ch_id
@@ -39,6 +59,7 @@ class UADChannel:
         self.meter_level = -77.0    # dBFS (-77.0 to 0.0)
         self.meter_peak = -77.0     # dBFS
         self.meter_clip = False     # True / False
+        self.preamp = UADPreamp()   # Hardware analog preamp & Unison state
         # Sends (0: AUX 1, 1: AUX 2, 2..5: CUE 1..4)
         self.sends: Dict[int, UADSend] = {
             i: UADSend(i) for i in range(6)
@@ -262,6 +283,21 @@ class UADClient:
                     self.send_command(f"subscribe {dev_path}/sends/{s_idx}/GainTapered/value")
                     self.send_command(f"subscribe {dev_path}/sends/{s_idx}/Pan/value")
                     self.send_command(f"subscribe {dev_path}/sends/{s_idx}/Bypass/value")
+
+                # Hardware analog preamp & Unison subscriptions
+                self.send_command(f"get {dev_path}/preamps/0")
+                self.send_command(f"subscribe {dev_path}/preamps/0/Gain/value")
+                self.send_command(f"subscribe {dev_path}/preamps/0/GainTapered/value")
+                self.send_command(f"subscribe {dev_path}/preamps/0/48V/value")
+                self.send_command(f"subscribe {dev_path}/preamps/0/Pad/value")
+                self.send_command(f"subscribe {dev_path}/preamps/0/LowCut/value")
+                self.send_command(f"subscribe {dev_path}/preamps/0/Phase/value")
+                self.send_command(f"subscribe {dev_path}/preamps/0/HiZ/value")
+                self.send_command(f"subscribe {dev_path}/preamps/0/PreampGainCustomDisplayText/value")
+                self.send_command(f"subscribe {dev_path}/IOType/value")
+                self.send_command(f"get {dev_path}/effects/0")
+                self.send_command(f"subscribe {dev_path}/effects/0/EffectName/value")
+                self.send_command(f"subscribe {dev_path}/effects/0/Power/value")
 
             # 2. Active Auxes (e.g. 25: AUX 1, 26: AUX 2)
             for aux_id in valid_auxs:
@@ -500,6 +536,10 @@ class UADClient:
                     ch.name = str(data)
                     if self.on_channel_change:
                         self.on_channel_change("name", ch.id, ch.name)
+                elif prop == "IOType":
+                    ch.preamp.iotype = str(data)
+                    if self.on_channel_change:
+                        self.on_channel_change("preamp_prop", ch.id, ("IOType", data))
             return
 
         # 5. Full Send properties: /devices/0/inputs/{id}/sends/{send_id} or /devices/0/auxs/{id}/sends/{send_id}
@@ -562,6 +602,90 @@ class UADClient:
                     send.bypass = bool(data)
                     if self.on_channel_change:
                         self.on_channel_change("send_bypass", ch.id, (s_idx, send.bypass))
+            return
+
+        # 7. Preamp full properties: /devices/0/inputs/{id}/preamps/0
+        if len(parts) == 6 and parts[0] == "devices" and parts[2] == "inputs" and parts[4] == "preamps" and parts[5] == "0":
+            base_path = f"/devices/{parts[1]}/{parts[2]}/{parts[3]}"
+            ch = self.path_to_channel.get(base_path)
+            if ch and isinstance(data, dict):
+                props = data.get("properties", {})
+                if "Gain" in props or "GainTapered" in props:
+                    ch.preamp.has_preamp = True
+                    if "Gain" in props:
+                        ch.preamp.gain = float(props["Gain"].get("value", 10.0))
+                    if "GainTapered" in props:
+                        ch.preamp.gain_tapered = float(props["GainTapered"].get("value", 0.0))
+                    if "48V" in props:
+                        ch.preamp.phantom_48v = bool(props["48V"].get("value", False))
+                    if "Pad" in props:
+                        ch.preamp.pad = bool(props["Pad"].get("value", False))
+                    if "LowCut" in props:
+                        ch.preamp.low_cut = bool(props["LowCut"].get("value", False))
+                    if "Phase" in props:
+                        ch.preamp.phase = bool(props["Phase"].get("value", False))
+                    if "HiZ" in props:
+                        ch.preamp.hiz = bool(props["HiZ"].get("value", False))
+                    if "PreampGainCustomDisplayText" in props:
+                        ch.preamp.custom_text = str(props["PreampGainCustomDisplayText"].get("value", ""))
+                    if self.on_channel_change:
+                        self.on_channel_change("preamp", ch.id, ch.preamp)
+            return
+
+        # 8. Preamp property updates: /devices/0/inputs/{id}/preamps/0/{prop}/value
+        if len(parts) == 8 and parts[0] == "devices" and parts[2] == "inputs" and parts[4] == "preamps" and parts[5] == "0" and parts[7] == "value":
+            base_path = f"/devices/{parts[1]}/{parts[2]}/{parts[3]}"
+            ch = self.path_to_channel.get(base_path)
+            if ch:
+                ch.preamp.has_preamp = True
+                prop = parts[6]
+                if prop == "Gain":
+                    ch.preamp.gain = float(data)
+                elif prop == "GainTapered":
+                    ch.preamp.gain_tapered = float(data)
+                elif prop == "48V":
+                    ch.preamp.phantom_48v = bool(data)
+                elif prop == "Pad":
+                    ch.preamp.pad = bool(data)
+                elif prop == "LowCut":
+                    ch.preamp.low_cut = bool(data)
+                elif prop == "Phase":
+                    ch.preamp.phase = bool(data)
+                elif prop == "HiZ":
+                    ch.preamp.hiz = bool(data)
+                elif prop == "PreampGainCustomDisplayText":
+                    ch.preamp.custom_text = str(data)
+
+                if self.on_channel_change:
+                    self.on_channel_change("preamp_prop", ch.id, (prop, data))
+            return
+
+        # 9. Unison Effect full properties: /devices/0/inputs/{id}/effects/0
+        if len(parts) == 6 and parts[0] == "devices" and parts[2] == "inputs" and parts[4] == "effects" and parts[5] == "0":
+            base_path = f"/devices/{parts[1]}/{parts[2]}/{parts[3]}"
+            ch = self.path_to_channel.get(base_path)
+            if ch and isinstance(data, dict):
+                props = data.get("properties", {})
+                if "EffectName" in props:
+                    ch.preamp.unison_plugin_name = str(props["EffectName"].get("value", ""))
+                if "Power" in props:
+                    ch.preamp.unison_power = bool(props["Power"].get("value", False))
+                if self.on_channel_change:
+                    self.on_channel_change("unison", ch.id, (ch.preamp.unison_plugin_name, ch.preamp.unison_power))
+            return
+
+        # 10. Unison Effect property updates: /devices/0/inputs/{id}/effects/0/{prop}/value
+        if len(parts) == 8 and parts[0] == "devices" and parts[2] == "inputs" and parts[4] == "effects" and parts[5] == "0" and parts[7] == "value":
+            base_path = f"/devices/{parts[1]}/{parts[2]}/{parts[3]}"
+            ch = self.path_to_channel.get(base_path)
+            if ch:
+                prop = parts[6]
+                if prop == "EffectName":
+                    ch.preamp.unison_plugin_name = str(data)
+                elif prop == "Power":
+                    ch.preamp.unison_power = bool(data)
+                if self.on_channel_change:
+                    self.on_channel_change("unison_prop", ch.id, (prop, data))
             return
 
     # --- Outbound Control Methods ---
@@ -655,6 +779,159 @@ class UADClient:
         cmd = f"set {ch.dev_path}/Solo/value?context_type=main&func_id={fid} {val_str}"
         self.send_command(cmd)
         ch.solo = soloed
+
+    # --- Preamp & Unison Outbound Control Methods ---
+
+    def set_preamp_gain(self, ch_id: int, tapered: float):
+        """Set analog hardware preamp gain tapered level (0.0 to 1.0)."""
+        ch = self.channels.get(ch_id)
+        if not ch or not ch.dev_path:
+            return
+        val = max(0.0, min(1.0, float(tapered)))
+        fid = self._next_func_id()
+        cmd = f"set {ch.dev_path}/preamps/0/GainTapered/value?context_type=main&func_id={fid} {val:.6f}"
+        self.send_command(cmd)
+        ch.preamp.gain_tapered = val
+
+    def set_preamp_gain_db(self, ch_id: int, gain_db: float):
+        """Set analog hardware preamp gain in dB (+10.0 to +65.0 dB)."""
+        ch = self.channels.get(ch_id)
+        if not ch or not ch.dev_path:
+            return
+        val = max(10.0, min(65.0, float(gain_db)))
+        fid = self._next_func_id()
+        cmd = f"set {ch.dev_path}/preamps/0/Gain/value?context_type=main&func_id={fid} {val:.1f}"
+        self.send_command(cmd)
+        ch.preamp.gain = val
+
+    def nudge_preamp_gain_db(self, ch_id: int, delta_db: float) -> float:
+        """Nudge preamp gain by delta dB (+/- 1.0 dB). Clamped to 10.0..65.0 dB."""
+        ch = self.channels.get(ch_id)
+        if not ch:
+            return 10.0
+        current = ch.preamp.gain
+        new_val = max(10.0, min(65.0, current + delta_db))
+        self.set_preamp_gain_db(ch_id, new_val)
+        return new_val
+
+    def set_preamp_48v(self, ch_id: int, enabled: bool):
+        """Set +48V Phantom Power state."""
+        ch = self.channels.get(ch_id)
+        if not ch or not ch.dev_path:
+            return
+        fid = self._next_func_id()
+        val_str = "true" if enabled else "false"
+        cmd = f"set {ch.dev_path}/preamps/0/48V/value?context_type=main&func_id={fid} {val_str}"
+        self.send_command(cmd)
+        ch.preamp.phantom_48v = enabled
+
+    def toggle_preamp_48v(self, ch_id: int) -> bool:
+        """Toggle +48V Phantom Power state."""
+        ch = self.channels.get(ch_id)
+        if not ch:
+            return False
+        new_state = not ch.preamp.phantom_48v
+        self.set_preamp_48v(ch_id, new_state)
+        return new_state
+
+    def set_preamp_pad(self, ch_id: int, enabled: bool):
+        """Set -20 dB Pad state."""
+        ch = self.channels.get(ch_id)
+        if not ch or not ch.dev_path:
+            return
+        fid = self._next_func_id()
+        val_str = "true" if enabled else "false"
+        cmd = f"set {ch.dev_path}/preamps/0/Pad/value?context_type=main&func_id={fid} {val_str}"
+        self.send_command(cmd)
+        ch.preamp.pad = enabled
+
+    def toggle_preamp_pad(self, ch_id: int) -> bool:
+        """Toggle -20 dB Pad state."""
+        ch = self.channels.get(ch_id)
+        if not ch:
+            return False
+        new_state = not ch.preamp.pad
+        self.set_preamp_pad(ch_id, new_state)
+        return new_state
+
+    def set_preamp_lowcut(self, ch_id: int, enabled: bool):
+        """Set 75 Hz High-Pass Low-Cut filter state."""
+        ch = self.channels.get(ch_id)
+        if not ch or not ch.dev_path:
+            return
+        fid = self._next_func_id()
+        val_str = "true" if enabled else "false"
+        cmd = f"set {ch.dev_path}/preamps/0/LowCut/value?context_type=main&func_id={fid} {val_str}"
+        self.send_command(cmd)
+        ch.preamp.low_cut = enabled
+
+    def toggle_preamp_lowcut(self, ch_id: int) -> bool:
+        """Toggle 75 Hz High-Pass Low-Cut filter state."""
+        ch = self.channels.get(ch_id)
+        if not ch:
+            return False
+        new_state = not ch.preamp.low_cut
+        self.set_preamp_lowcut(ch_id, new_state)
+        return new_state
+
+    def set_preamp_phase(self, ch_id: int, enabled: bool):
+        """Set Phase Invert (Ø) state."""
+        ch = self.channels.get(ch_id)
+        if not ch or not ch.dev_path:
+            return
+        fid = self._next_func_id()
+        val_str = "true" if enabled else "false"
+        cmd = f"set {ch.dev_path}/preamps/0/Phase/value?context_type=main&func_id={fid} {val_str}"
+        self.send_command(cmd)
+        ch.preamp.phase = enabled
+
+    def toggle_preamp_phase(self, ch_id: int) -> bool:
+        """Toggle Phase Invert (Ø) state."""
+        ch = self.channels.get(ch_id)
+        if not ch:
+            return False
+        new_state = not ch.preamp.phase
+        self.set_preamp_phase(ch_id, new_state)
+        return new_state
+
+    def set_preamp_iotype(self, ch_id: int, iotype: str):
+        """Set Input IOType ("Mic" or "Line")."""
+        ch = self.channels.get(ch_id)
+        if not ch or not ch.dev_path:
+            return
+        fid = self._next_func_id()
+        cmd = f'set {ch.dev_path}/IOType/value?context_type=main&func_id={fid} "{iotype}"'
+        self.send_command(cmd)
+        ch.preamp.iotype = iotype
+
+    def toggle_preamp_iotype(self, ch_id: int) -> str:
+        """Toggle between 'Mic' and 'Line' input source."""
+        ch = self.channels.get(ch_id)
+        if not ch:
+            return "Mic"
+        new_type = "Line" if ch.preamp.iotype == "Mic" else "Mic"
+        self.set_preamp_iotype(ch_id, new_type)
+        return new_type
+
+    def set_unison_power(self, ch_id: int, power: bool):
+        """Set Unison plug-in power / bypass state."""
+        ch = self.channels.get(ch_id)
+        if not ch or not ch.dev_path:
+            return
+        fid = self._next_func_id()
+        val_str = "true" if power else "false"
+        cmd = f"set {ch.dev_path}/effects/0/Power/value?context_type=main&func_id={fid} {val_str}"
+        self.send_command(cmd)
+        ch.preamp.unison_power = power
+
+    def toggle_unison_power(self, ch_id: int) -> bool:
+        """Toggle Unison plug-in power / bypass state."""
+        ch = self.channels.get(ch_id)
+        if not ch:
+            return False
+        new_power = not ch.preamp.unison_power
+        self.set_unison_power(ch_id, new_power)
+        return new_power
 
     def set_monitor_db(self, db_val: float):
         """Set Apollo master monitor output level in dB (-96.0 to 0.0 dB)."""
