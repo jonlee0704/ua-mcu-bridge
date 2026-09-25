@@ -16,3 +16,7 @@ app_build/*.iconset/
 app_build/UAMCUBridge
 scratch/
 *.zip
+*.wav
+*.aiff
+*.mp3
+*.m4a
