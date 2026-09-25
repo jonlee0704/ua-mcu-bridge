@@ -1244,6 +1244,9 @@ class MCUEngine:
             self.refresh_all_slots()
             return
 
+        if event_type == "monitor":
+            return
+
         slot = ch_id - self.bank_offset
         if not (0 <= slot < self.num_slots):
             return  # Changed channel is outside current visible bank

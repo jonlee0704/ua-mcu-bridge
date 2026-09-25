@@ -250,17 +250,18 @@ class UADClient:
                 bridge_idx += 1
 
                 # Subscriptions for input
-                self.send_command(f"sub {dev_path}/FaderLevel/value")
-                self.send_command(f"sub {dev_path}/FaderLevelTapered/value")
-                self.send_command(f"sub {dev_path}/Pan/value")
-                self.send_command(f"sub {dev_path}/Mute/value")
-                self.send_command(f"sub {dev_path}/Solo/value")
+                self.send_command(f"subscribe {dev_path}/FaderLevel/value")
+                self.send_command(f"subscribe {dev_path}/FaderLevelTapered/value")
+                self.send_command(f"subscribe {dev_path}/Pan/value")
+                self.send_command(f"subscribe {dev_path}/Mute/value")
+                self.send_command(f"subscribe {dev_path}/Solo/value")
+                self.send_command(f"subscribe {dev_path}/Name/value")
                 for s_idx in range(6):
                     self.send_command(f"get {dev_path}/sends/{s_idx}")
-                    self.send_command(f"sub {dev_path}/sends/{s_idx}/Gain/value")
-                    self.send_command(f"sub {dev_path}/sends/{s_idx}/GainTapered/value")
-                    self.send_command(f"sub {dev_path}/sends/{s_idx}/Pan/value")
-                    self.send_command(f"sub {dev_path}/sends/{s_idx}/Bypass/value")
+                    self.send_command(f"subscribe {dev_path}/sends/{s_idx}/Gain/value")
+                    self.send_command(f"subscribe {dev_path}/sends/{s_idx}/GainTapered/value")
+                    self.send_command(f"subscribe {dev_path}/sends/{s_idx}/Pan/value")
+                    self.send_command(f"subscribe {dev_path}/sends/{s_idx}/Bypass/value")
 
             # 2. Active Auxes (e.g. 25: AUX 1, 26: AUX 2)
             for aux_id in valid_auxs:
@@ -291,15 +292,16 @@ class UADClient:
                 bridge_idx += 1
 
                 # Subscriptions for aux
-                self.send_command(f"sub {dev_path}/FaderLevel/value")
-                self.send_command(f"sub {dev_path}/FaderLevelTapered/value")
-                self.send_command(f"sub {dev_path}/Mute/value")
+                self.send_command(f"subscribe {dev_path}/FaderLevel/value")
+                self.send_command(f"subscribe {dev_path}/FaderLevelTapered/value")
+                self.send_command(f"subscribe {dev_path}/Mute/value")
+                self.send_command(f"subscribe {dev_path}/Name/value")
                 # Aux Cue sends (indices 0..3 map to MCU CUE 1..4, i.e. send_mode 2..5)
                 for cue_idx in range(4):
                     self.send_command(f"get {dev_path}/sends/{cue_idx}")
-                    self.send_command(f"sub {dev_path}/sends/{cue_idx}/Gain/value")
-                    self.send_command(f"sub {dev_path}/sends/{cue_idx}/GainTapered/value")
-                    self.send_command(f"sub {dev_path}/sends/{cue_idx}/Bypass/value")
+                    self.send_command(f"subscribe {dev_path}/sends/{cue_idx}/Gain/value")
+                    self.send_command(f"subscribe {dev_path}/sends/{cue_idx}/GainTapered/value")
+                    self.send_command(f"subscribe {dev_path}/sends/{cue_idx}/Bypass/value")
 
             self.channels = new_channels
             self.path_to_channel = new_path_map
@@ -423,9 +425,9 @@ class UADClient:
                         if "Mute" in props:
                             self.monitor_mute = bool(props["Mute"].get("value", False))
                         # Subscribe to Monitor output changes
-                        self.send_command(f"sub /devices/{self.device_id}/outputs/{out_id}/CRMonitorLevelTapered/value")
-                        self.send_command(f"sub /devices/{self.device_id}/outputs/{out_id}/CRMonitorLevel/value")
-                        self.send_command(f"sub /devices/{self.device_id}/outputs/{out_id}/Mute/value")
+                        self.send_command(f"subscribe /devices/{self.device_id}/outputs/{out_id}/CRMonitorLevelTapered/value")
+                        self.send_command(f"subscribe /devices/{self.device_id}/outputs/{out_id}/CRMonitorLevel/value")
+                        self.send_command(f"subscribe /devices/{self.device_id}/outputs/{out_id}/Mute/value")
             except (ValueError, TypeError):
                 pass
             return
