@@ -353,9 +353,21 @@ The native Swift application provides an unobtrusive menu bar status item:
  ├── ● Running (Port 9) [Status in Green]
  ├── Stop Bridge / Restart Bridge
  ├── ─────────────────────────────
- ├── Voice Guidance: ON (Speaks channels & levels) >
- │    ├── Voice Guidance: Enabled (ON) [✔]
- │    └── Voice Guidance: Disabled (OFF)
+ ├── Talkback: ON (Speaks channels & levels) >
+ │    ├── Voice Guidance (Talkback): Enabled (ON) [✔]
+ │    ├── ─────────────────────────────
+ │    └── Volume: 100% > (10% to 100%)
+ ├── Talkback Volume: 100% >
+ │    ├── 100% (Maximum / Default) [✔]
+ │    ├── 90%
+ │    ├── 80%
+ │    ├── 70%
+ │    ├── 60%
+ │    ├── 50%
+ │    ├── 40%
+ │    ├── 30%
+ │    ├── 20%
+ │    └── 10%
  ├── MIDI Port: SSL V-MIDI Port 9  >
  │    ├── Port 1 (SSL 360 DAW 1)
  │    ├── Port 5 (SSL 360 DAW 2)
@@ -378,7 +390,7 @@ To empower blind and low-vision audio engineers to mix, record, and navigate wit
 * **Concise Decibel Pronunciation:** Automatically speaks "dB" as the concise letters **"d B"** (*"dee bee"*) rather than expanding to the lengthy word *"decibels"*, maximizing speed and clarity during active mixing.
 * **Zero Audio/MIDI Latency:** Speech operates completely asynchronously in isolated non-blocking subprocesses. Moving faders, rotating knobs, or receiving meter packets is never delayed.
 * **Instant Interruption & Debouncing:** Fast gestures immediately cancel previous utterances so spoken feedback never falls behind, and rapid continuous adjustments (such as spinning the monitor volume wheel) automatically debounce (350ms) to speak only the settled final value.
-* **Dynamic Menu Bar Toggle:** Can be toggled ON or OFF at any time via the macOS Menu Bar under **Voice Guidance**. Settings are preserved persistently in `~/.uamcu_config.json`.
+* **Dynamic Menu Bar Toggle & Volume Settings:** Can be toggled ON or OFF and adjusted across 10 volume levels (10% to 100%) directly from the macOS Menu Bar under **Talkback Volume**. Settings are preserved persistently in `~/.uamcu_config.json`.
 
 #### Spoken Interactions Table:
 | Hardware Trigger | Action / Gesture | Spoken Feedback Example |

@@ -76,6 +76,39 @@ def save_speech_mode(enabled: bool):
         pass
 
 
+def load_speech_volume() -> float:
+    """Read voice guidance / talkback volume (0.05 to 1.0, default: 1.0)."""
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r") as f:
+                cfg = json.load(f)
+                val = cfg.get("speech_volume", 1.0)
+                if isinstance(val, (int, float)):
+                    if val > 1.0:
+                        return max(0.05, min(1.0, float(val) / 100.0))
+                    return max(0.05, min(1.0, float(val)))
+    except Exception:
+        pass
+    return 1.0
+
+
+def save_speech_volume(vol: float):
+    """Save voice guidance / talkback volume to ~/.uamcu_config.json."""
+    try:
+        cfg = {}
+        if os.path.exists(CONFIG_PATH):
+            try:
+                with open(CONFIG_PATH, "r") as f:
+                    cfg = json.load(f)
+            except Exception:
+                cfg = {}
+        cfg["speech_volume"] = max(0.05, min(1.0, float(vol)))
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(cfg, f, indent=2)
+    except Exception:
+        pass
+
+
 def format_db_speech(db: float) -> str:
     """Format dB float to clear natural speech for blind audio engineers."""
     if db <= -140.0:
@@ -105,6 +138,29 @@ class VoiceAnnouncer:
         self._proc: Optional[subprocess.Popen] = None
         self._lock = threading.Lock()
         self._debounce_timer: Optional[threading.Timer] = None
+        self._config_mtime: float = 0.0
+        self._cached_enabled: bool = True
+        self._cached_volume: float = 1.0
+        self._refresh_config()
+
+    def _refresh_config(self):
+        """Reload voice settings from ~/.uamcu_config.json if file changed."""
+        try:
+            if os.path.exists(CONFIG_PATH):
+                mtime = os.path.getmtime(CONFIG_PATH)
+                if mtime != self._config_mtime:
+                    self._config_mtime = mtime
+                    with open(CONFIG_PATH, "r") as f:
+                        cfg = json.load(f)
+                    self._cached_enabled = cfg.get("speech_feedback", True)
+                    raw_vol = cfg.get("speech_volume", 1.0)
+                    if isinstance(raw_vol, (int, float)):
+                        if raw_vol > 1.0:
+                            self._cached_volume = max(0.05, min(1.0, float(raw_vol) / 100.0))
+                        else:
+                            self._cached_volume = max(0.05, min(1.0, float(raw_vol)))
+        except Exception:
+            pass
 
     @staticmethod
     def _sanitize_for_speech(text: str) -> str:
@@ -115,7 +171,12 @@ class VoiceAnnouncer:
         return re.sub(r'\s+', ' ', text).strip()
 
     def is_enabled(self) -> bool:
-        return load_speech_mode()
+        self._refresh_config()
+        return self._cached_enabled
+
+    def get_volume(self) -> float:
+        self._refresh_config()
+        return self._cached_volume
 
     def speak(self, text: str, interrupt: bool = True):
         """Speak the given text if voice guidance is enabled. Non-blocking."""
@@ -123,6 +184,8 @@ class VoiceAnnouncer:
             return
 
         text = self._sanitize_for_speech(text)
+        vol = self.get_volume()
+        spoken_text = f"[[volm {vol:.2f}]] {text}"
 
         with self._lock:
             if self._debounce_timer:
@@ -142,7 +205,7 @@ class VoiceAnnouncer:
 
             try:
                 self._proc = subprocess.Popen(
-                    ["/usr/bin/say", "-r", "210", text],
+                    ["/usr/bin/say", "-r", "210", spoken_text],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL
                 )

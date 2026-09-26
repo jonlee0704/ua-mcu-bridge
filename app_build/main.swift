@@ -14,6 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var isRunning: Bool = false
     var currentWheelMode: String = "monitor"
     var isSpeechEnabled: Bool = true
+    var currentSpeechVolume: Double = 1.0 // 0.1 to 1.0 (default 100%)
     let configFileURL: URL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".uamcu_config.json")
     
@@ -38,9 +39,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let speech = json["speech_feedback"] as? Bool {
                 isSpeechEnabled = speech
             }
+            if let vol = json["speech_volume"] as? Double {
+                currentSpeechVolume = max(0.05, min(1.0, vol))
+            } else if let volInt = json["speech_volume"] as? Int {
+                currentSpeechVolume = max(0.05, min(1.0, Double(volInt) / 100.0))
+            }
         } else {
             currentWheelMode = UserDefaults.standard.string(forKey: "UAMCUWheelMode") ?? "monitor"
             isSpeechEnabled = UserDefaults.standard.object(forKey: "UAMCUSpeechFeedback") as? Bool ?? true
+            let savedVol = UserDefaults.standard.double(forKey: "UAMCUSpeechVolume")
+            if savedVol > 0.0 {
+                currentSpeechVolume = max(0.05, min(1.0, savedVol))
+            }
         }
     }
     
@@ -52,8 +62,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         dict["wheel_mode"] = currentWheelMode
         dict["speech_feedback"] = isSpeechEnabled
+        dict["speech_volume"] = currentSpeechVolume
         UserDefaults.standard.set(currentWheelMode, forKey: "UAMCUWheelMode")
         UserDefaults.standard.set(isSpeechEnabled, forKey: "UAMCUSpeechFeedback")
+        UserDefaults.standard.set(currentSpeechVolume, forKey: "UAMCUSpeechVolume")
         if let data = try? JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted) {
             try? data.write(to: configFileURL)
         }
@@ -63,7 +75,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard isSpeechEnabled else { return }
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-        proc.arguments = ["-r", "210", text]
+        let volStr = String(format: "[[volm %.2f]]", currentSpeechVolume)
+        proc.arguments = ["-r", "210", "\(volStr) \(text)"]
         try? proc.run()
     }
     
@@ -213,10 +226,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         wheelParentItem.submenu = wheelMenu
         menu.addItem(wheelParentItem)
         
-        // Voice Guidance / Spoken Feedback Submenu (Accessibility)
+        // Voice Guidance / Talkback Submenu (Accessibility)
         let voiceMenu = NSMenu()
         let voiceToggleItem = NSMenuItem(
-            title: isSpeechEnabled ? "Voice Guidance: Enabled (ON)" : "Voice Guidance: Disabled (OFF)",
+            title: isSpeechEnabled ? "Voice Guidance (Talkback): Enabled (ON)" : "Voice Guidance (Talkback): Disabled (OFF)",
             action: #selector(toggleSpeechAction(_:)),
             keyEquivalent: "v"
         )
@@ -224,10 +237,58 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if isSpeechEnabled { voiceToggleItem.state = .on }
         voiceMenu.addItem(voiceToggleItem)
         
-        let voiceParentTitle = isSpeechEnabled ? "Voice Guidance: ON (Speaks channels & levels)" : "Voice Guidance: OFF"
+        let voiceParentTitle = isSpeechEnabled ? "Talkback: ON (Speaks channels & levels)" : "Talkback: OFF"
         let voiceParentItem = NSMenuItem(title: voiceParentTitle, action: nil, keyEquivalent: "")
         voiceParentItem.submenu = voiceMenu
         menu.addItem(voiceParentItem)
+        
+        // Talkback Volume Submenu
+        let volMenu = NSMenu()
+        let volumeLevels: [(Double, String)] = [
+            (1.0, "100% (Maximum / Default)"),
+            (0.9, "90%"),
+            (0.8, "80%"),
+            (0.7, "70%"),
+            (0.6, "60%"),
+            (0.5, "50%"),
+            (0.4, "40%"),
+            (0.3, "30%"),
+            (0.2, "20%"),
+            (0.1, "10%")
+        ]
+        
+        let currentVolPct = Int(round(currentSpeechVolume * 100.0))
+        for (volVal, label) in volumeLevels {
+            let item = NSMenuItem(title: label, action: #selector(selectSpeechVolumeAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = volVal
+            let itemPct = Int(round(volVal * 100.0))
+            if abs(itemPct - currentVolPct) < 5 {
+                item.state = .on
+            }
+            volMenu.addItem(item)
+        }
+        
+        let volParentItem = NSMenuItem(title: "Talkback Volume: \(currentVolPct)%", action: nil, keyEquivalent: "")
+        volParentItem.submenu = volMenu
+        menu.addItem(volParentItem)
+        
+        // Also nest volume settings inside the Talkback submenu for easy VoiceOver discovery
+        voiceMenu.addItem(NSMenuItem.separator())
+        let nestedVolMenu = NSMenu()
+        for (volVal, label) in volumeLevels {
+            let item = NSMenuItem(title: label, action: #selector(selectSpeechVolumeAction(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = volVal
+            let itemPct = Int(round(volVal * 100.0))
+            if abs(itemPct - currentVolPct) < 5 {
+                item.state = .on
+            }
+            nestedVolMenu.addItem(item)
+        }
+        let nestedVolParent = NSMenuItem(title: "Volume: \(currentVolPct)%", action: nil, keyEquivalent: "")
+        nestedVolParent.submenu = nestedVolMenu
+        voiceMenu.addItem(nestedVolParent)
         
         menu.addItem(NSMenuItem.separator())
         
@@ -419,11 +480,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         writeConfig()
         buildMenu()
         
-        let msg = isSpeechEnabled ? "Voice guidance enabled" : "Voice guidance disabled"
+        let msg = isSpeechEnabled ? "Talkback voice guidance enabled" : "Talkback voice guidance disabled"
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/say")
-        proc.arguments = ["-r", "210", msg]
+        let volStr = String(format: "[[volm %.2f]]", currentSpeechVolume)
+        proc.arguments = ["-r", "210", "\(volStr) \(msg)"]
         try? proc.run()
+    }
+    
+    @objc func selectSpeechVolumeAction(_ sender: NSMenuItem) {
+        if let vol = sender.representedObject as? Double {
+            currentSpeechVolume = max(0.05, min(1.0, vol))
+            writeConfig()
+            buildMenu()
+            let pct = Int(round(currentSpeechVolume * 100.0))
+            speakAnnouncement("Talkback volume \(pct) percent")
+        }
     }
     
     @objc func openTerminalMonitor() {
