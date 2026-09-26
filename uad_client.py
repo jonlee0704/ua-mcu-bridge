@@ -45,6 +45,17 @@ class UADPreamp:
         return f"<UADPreamp gain={self.gain:.1f}dB 48V={self.phantom_48v} Pad={self.pad} LowCut={self.low_cut} Phase={self.phase} Unison='{self.unison_plugin_name}'>"
 
 
+class UADEffect:
+    """Represents a plug-in insert slot on a channel."""
+    def __init__(self, index: int):
+        self.index: int = index
+        self.name: str = ""
+        self.power: bool = True  # True = Active, False = Bypassed
+
+    def __repr__(self):
+        return f"<UADEffect {self.index}: '{self.name}' power={self.power}>"
+
+
 class UADChannel:
     def __init__(self, ch_id: int, name: str = "", fader: float = 0.0, pan: float = 0.0, mute: bool = False, solo: bool = False, ch_type: str = "input", dev_path: str = ""):
         self.id = ch_id
@@ -63,6 +74,10 @@ class UADChannel:
         # Sends (0: AUX 1, 1: AUX 2, 2..5: CUE 1..4)
         self.sends: Dict[int, UADSend] = {
             i: UADSend(i) for i in range(6)
+        }
+        # Insert plug-in effects (0 to 7)
+        self.effects: Dict[int, UADEffect] = {
+            i: UADEffect(i) for i in range(8)
         }
 
     def __repr__(self):
@@ -295,9 +310,10 @@ class UADClient:
                 self.send_command(f"subscribe {dev_path}/preamps/0/HiZ/value")
                 self.send_command(f"subscribe {dev_path}/preamps/0/PreampGainCustomDisplayText/value")
                 self.send_command(f"subscribe {dev_path}/IOType/value")
-                self.send_command(f"get {dev_path}/effects/0")
-                self.send_command(f"subscribe {dev_path}/effects/0/EffectName/value")
-                self.send_command(f"subscribe {dev_path}/effects/0/Power/value")
+                for eff_idx in range(8):
+                    self.send_command(f"get {dev_path}/effects/{eff_idx}")
+                    self.send_command(f"subscribe {dev_path}/effects/{eff_idx}/EffectName/value")
+                    self.send_command(f"subscribe {dev_path}/effects/{eff_idx}/Power/value")
 
             # 2. Active Auxes (e.g. 25: AUX 1, 26: AUX 2)
             for aux_id in valid_auxs:
@@ -660,32 +676,59 @@ class UADClient:
                     self.on_channel_change("preamp_prop", ch.id, (prop, data))
             return
 
-        # 9. Unison Effect full properties: /devices/0/inputs/{id}/effects/0
-        if len(parts) == 6 and parts[0] == "devices" and parts[2] == "inputs" and parts[4] == "effects" and parts[5] == "0":
+        # 9. Channel Effect full properties: /devices/0/inputs/{id}/effects/{eff_idx}
+        if len(parts) == 6 and parts[0] == "devices" and parts[2] == "inputs" and parts[4] == "effects":
+            try:
+                eff_idx = int(parts[5])
+            except ValueError:
+                eff_idx = 0
             base_path = f"/devices/{parts[1]}/{parts[2]}/{parts[3]}"
             ch = self.path_to_channel.get(base_path)
             if ch and isinstance(data, dict):
                 props = data.get("properties", {})
+                eff = ch.effects.get(eff_idx)
+                if eff is None:
+                    eff = UADEffect(eff_idx)
+                    ch.effects[eff_idx] = eff
                 if "EffectName" in props:
-                    ch.preamp.unison_plugin_name = str(props["EffectName"].get("value", ""))
+                    eff.name = str(props["EffectName"].get("value", ""))
                 if "Power" in props:
-                    ch.preamp.unison_power = bool(props["Power"].get("value", False))
+                    eff.power = bool(props["Power"].get("value", False))
+                if eff_idx == 0 and ch.preamp.has_preamp:
+                    ch.preamp.unison_plugin_name = eff.name
+                    ch.preamp.unison_power = eff.power
                 if self.on_channel_change:
-                    self.on_channel_change("unison", ch.id, (ch.preamp.unison_plugin_name, ch.preamp.unison_power))
+                    self.on_channel_change("effect", ch.id, (eff_idx, eff.name, eff.power))
+                    if eff_idx == 0 and ch.preamp.has_preamp:
+                        self.on_channel_change("unison", ch.id, (ch.preamp.unison_plugin_name, ch.preamp.unison_power))
             return
 
-        # 10. Unison Effect property updates: /devices/0/inputs/{id}/effects/0/{prop}/value
-        if len(parts) == 8 and parts[0] == "devices" and parts[2] == "inputs" and parts[4] == "effects" and parts[5] == "0" and parts[7] == "value":
+        # 10. Channel Effect property updates: /devices/0/inputs/{id}/effects/{eff_idx}/{prop}/value
+        if len(parts) == 8 and parts[0] == "devices" and parts[2] == "inputs" and parts[4] == "effects" and parts[7] == "value":
+            try:
+                eff_idx = int(parts[5])
+            except ValueError:
+                eff_idx = 0
             base_path = f"/devices/{parts[1]}/{parts[2]}/{parts[3]}"
             ch = self.path_to_channel.get(base_path)
             if ch:
                 prop = parts[6]
+                eff = ch.effects.get(eff_idx)
+                if eff is None:
+                    eff = UADEffect(eff_idx)
+                    ch.effects[eff_idx] = eff
                 if prop == "EffectName":
-                    ch.preamp.unison_plugin_name = str(data)
+                    eff.name = str(data)
+                    if eff_idx == 0 and ch.preamp.has_preamp:
+                        ch.preamp.unison_plugin_name = str(data)
                 elif prop == "Power":
-                    ch.preamp.unison_power = bool(data)
+                    eff.power = bool(data)
+                    if eff_idx == 0 and ch.preamp.has_preamp:
+                        ch.preamp.unison_power = bool(data)
                 if self.on_channel_change:
-                    self.on_channel_change("unison_prop", ch.id, (prop, data))
+                    self.on_channel_change("effect_prop", ch.id, (eff_idx, prop, data))
+                    if eff_idx == 0 and ch.preamp.has_preamp:
+                        self.on_channel_change("unison_prop", ch.id, (prop, data))
             return
 
     # --- Outbound Control Methods ---
@@ -913,25 +956,61 @@ class UADClient:
         self.set_preamp_iotype(ch_id, new_type)
         return new_type
 
-    def set_unison_power(self, ch_id: int, power: bool):
-        """Set Unison plug-in power / bypass state."""
+    def set_effect_power(self, ch_id: int, eff_idx: int, power: bool):
+        """Set plug-in effect power / bypass state for slot eff_idx (0 to 7)."""
         ch = self.channels.get(ch_id)
         if not ch or not ch.dev_path:
             return
         fid = self._next_func_id()
         val_str = "true" if power else "false"
-        cmd = f"set {ch.dev_path}/effects/0/Power/value?context_type=main&func_id={fid} {val_str}"
+        cmd = f"set {ch.dev_path}/effects/{eff_idx}/Power/value?context_type=main&func_id={fid} {val_str}"
         self.send_command(cmd)
-        ch.preamp.unison_power = power
+        eff = ch.effects.get(eff_idx)
+        if eff:
+            eff.power = power
+        if eff_idx == 0 and ch.preamp.has_preamp:
+            ch.preamp.unison_power = power
 
-    def toggle_unison_power(self, ch_id: int) -> bool:
-        """Toggle Unison plug-in power / bypass state."""
+    def toggle_effect_power(self, ch_id: int, eff_idx: int) -> bool:
+        """Toggle plug-in effect power / bypass state for slot eff_idx."""
         ch = self.channels.get(ch_id)
         if not ch:
             return False
-        new_power = not ch.preamp.unison_power
-        self.set_unison_power(ch_id, new_power)
+        eff = ch.effects.get(eff_idx)
+        current = eff.power if eff else True
+        new_power = not current
+        self.set_effect_power(ch_id, eff_idx, new_power)
         return new_power
+
+    def set_all_effects_power(self, ch_id: int, power: bool):
+        """Enable or bypass all active plug-ins on a channel."""
+        ch = self.channels.get(ch_id)
+        if not ch:
+            return
+        for eff_idx, eff in ch.effects.items():
+            if eff.name and eff.name.strip() and eff.name != "None":
+                self.set_effect_power(ch_id, eff_idx, power)
+
+    def toggle_all_effects_power(self, ch_id: int) -> bool:
+        """Toggle bypass for all plug-ins on a channel. If any active -> bypass all; else activate all."""
+        ch = self.channels.get(ch_id)
+        if not ch:
+            return False
+        active_effs = [eff for eff in ch.effects.values() if eff.name and eff.name.strip() and eff.name != "None"]
+        if not active_effs:
+            return False
+        any_on = any(eff.power for eff in active_effs)
+        target = not any_on
+        self.set_all_effects_power(ch_id, target)
+        return target
+
+    def set_unison_power(self, ch_id: int, power: bool):
+        """Set Unison plug-in power / bypass state."""
+        self.set_effect_power(ch_id, 0, power)
+
+    def toggle_unison_power(self, ch_id: int) -> bool:
+        """Toggle Unison plug-in power / bypass state."""
+        return self.toggle_effect_power(ch_id, 0)
 
     def set_monitor_db(self, db_val: float):
         """Set Apollo master monitor output level in dB (-96.0 to 0.0 dB)."""
