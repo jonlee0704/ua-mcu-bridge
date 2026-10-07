@@ -3,7 +3,7 @@
 **Creator:** S&D A11y Solutions ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
 **Release Date:** September 24, 2026  
 **License:** [MIT with Audio Safety Rider](LICENSE)  
-**Legal Terms:** [Terms of Service & EULA](TERMS_OF_SERVICE.md) | [User Manual](MANUAL.md)
+**Legal Terms:** [Terms of Service & EULA](TERMS_OF_SERVICE.md) | [User Manual](MANUAL.md) | [Feature Matrix](FEATURES.md) | [Academic Whitepaper](academic_abstract_paper_tactile_audio_bridge.md)
 
 ---
 
@@ -36,6 +36,16 @@ It provides bidirectional motorized fader tracking, center-screen scribble strip
 ---
 
 ## Key Features
+
+### AI Studio Co-Producer & Pre-Flight Audio Inspector
+* **Tactile Trigger (`FINE` Key - Note 83):** Initiates a 3.5s real-time listening window across all 32 Apollo channels measuring live peak levels and converter clipping flags.
+* **Acoustic Rule Engine:** Detects converter clipping (+0.0 dBFS), muted channels receiving active audio, low-frequency rumble lacking 75 Hz high-pass filtering, and dead cables.
+* **4-Way Arrow Cluster Triage:**
+  * **UP (▲):** Apply hardware fix (Auto-trim gain -4 dB, engage 75 Hz low-cut, unmute track, or re-test session).
+  * **DOWN (▼):** Skip recommendation.
+  * **LEFT / RIGHT (◄ / ►):** Browse findings line-by-line.
+* **Hearing Protection:** Center Circle Key (`Note 100`) remains 100% dedicated to instant hardware Master Monitor Mute/Unmute at all times.
+
 
 * **8 Motorized Faders (14-Bit Precision):**
   * High-resolution bidirectional tracking between physical 100mm faders and UAD Console faders (`FaderLevelTapered`).

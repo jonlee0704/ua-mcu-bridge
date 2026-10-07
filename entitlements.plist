@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- App Sandbox -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+
+    <!-- Allow outgoing network connections (for UAD Console TCP 127.0.0.1:4710) -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- Audio & MIDI device access -->
+    <key>com.apple.security.device.audio-input</key>
+    <false/>
+</dict>
+</plist>

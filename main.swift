@@ -1,0 +1,537 @@
+import Foundation
+import Cocoa
+import CoreMIDI
+import Network
+import AVFoundation
+
+// MARK: - Configuration Model
+
+struct BridgeConfig: Codable {
+    var port: Int = 9
+    var wheelMode: String = "monitor"
+    var speechFeedback: Bool = true
+    var speechVolume: Float = 0.5
+    var speechRate: Float = 0.52
+
+    enum CodingKeys: String, CodingKey {
+        case port = "port"
+        case wheelMode = "wheel_mode"
+        case speechFeedback = "speech_feedback"
+        case speechVolume = "speech_volume"
+        case speechRate = "speech_rate"
+    }
+}
+
+final class ConfigManager {
+    static let shared = ConfigManager()
+    private let fileURL: URL
+
+    private init() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        fileURL = home.appendingPathComponent(".uamcu_config.json")
+    }
+
+    func load() -> BridgeConfig {
+        var config = BridgeConfig()
+        if let data = try? Data(contentsOf: fileURL),
+           let decoded = try? JSONDecoder().decode(BridgeConfig.self, from: data) {
+            config = decoded
+        } else {
+            // Check UserDefaults fallback
+            if let savedPort = UserDefaults.standard.value(forKey: "UAMCUPort") as? Int {
+                config.port = savedPort
+            }
+            if let savedWheel = UserDefaults.standard.string(forKey: "UAMCUWheelMode") {
+                config.wheelMode = savedWheel
+            }
+            if let savedSpeech = UserDefaults.standard.value(forKey: "UAMCUSpeechFeedback") as? Bool {
+                config.speechFeedback = savedSpeech
+            }
+            if let savedVol = UserDefaults.standard.value(forKey: "UAMCUSpeechVolume") as? Float {
+                config.speechVolume = savedVol
+            }
+            if let savedRate = UserDefaults.standard.value(forKey: "UAMCUSpeechRate") as? Float {
+                config.speechRate = savedRate
+            }
+        }
+        return config
+    }
+
+    func save(_ config: BridgeConfig) {
+        // Save to file
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .prettyPrinted
+        if let data = try? encoder.encode(config) {
+            try? data.write(to: fileURL)
+        }
+        // Save to UserDefaults
+        UserDefaults.standard.set(config.port, forKey: "UAMCUPort")
+        UserDefaults.standard.set(config.wheelMode, forKey: "UAMCUWheelMode")
+        UserDefaults.standard.set(config.speechFeedback, forKey: "UAMCUSpeechFeedback")
+        UserDefaults.standard.set(config.speechVolume, forKey: "UAMCUSpeechVolume")
+        UserDefaults.standard.set(config.speechRate, forKey: "UAMCUSpeechRate")
+    }
+}
+
+// MARK: - Application Logger
+
+final class AppLogger {
+    static let shared = AppLogger()
+    let logFileURL: URL
+    private var fileHandle: FileHandle?
+
+    private init() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let logsDir = home.appendingPathComponent("Library/Logs")
+        try? FileManager.default.createDirectory(at: logsDir, withIntermediateDirectories: true)
+        logFileURL = logsDir.appendingPathComponent("UAMCUBridge.log")
+
+        // Truncate if larger than 10MB to avoid ballooning disk space
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: logFileURL.path),
+           let size = attrs[.size] as? UInt64, size > 10_000_000 {
+            try? FileManager.default.removeItem(at: logFileURL)
+        }
+        if !FileManager.default.fileExists(atPath: logFileURL.path) {
+            FileManager.default.createFile(atPath: logFileURL.path, contents: nil)
+        }
+        fileHandle = try? FileHandle(forWritingTo: logFileURL)
+        fileHandle?.seekToEndOfFile()
+        log("=== UA-MCU Bridge Native Swift Session Started ===")
+    }
+
+    func log(_ message: String) {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        let timestamp = formatter.string(from: Date())
+        let line = "[\(timestamp)] \(message)\n"
+        NSLog("%@", message)
+        if let data = line.data(using: .utf8), let handle = try? FileHandle(forWritingTo: logFileURL) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        }
+    }
+
+    func openLog() {
+        NSWorkspace.shared.open(logFileURL)
+    }
+}
+
+public func bridgeLog(_ message: String) {
+    AppLogger.shared.log(message)
+}
+
+// MARK: - Application Delegate
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem!
+    private var menu: NSMenu!
+
+    private var config: BridgeConfig = BridgeConfig()
+    private var uadClient: UADClient!
+    private var midiAdapter: CoreMIDIAdapter!
+    private var mcuEngine: MCUEngine!
+
+    private var monitorTimer: Timer?
+    private var uadStatusMenuItem: NSMenuItem?
+    private var midiStatusMenuItem: NSMenuItem?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Load configuration
+        config = ConfigManager.shared.load()
+
+        // Configure Voice Announcer
+        VoiceAnnouncer.shared.isEnabled = config.speechFeedback
+        VoiceAnnouncer.shared.volume = config.speechVolume
+        VoiceAnnouncer.shared.speechRate = config.speechRate
+
+        // Setup Status Bar Item
+        setupStatusBar()
+
+        // Initialize Core Systems
+        setupBridgeSystems()
+
+        // Start Periodic Connection Health Monitor
+        monitorTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
+            self?.checkConnections()
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        cleanupHardware()
+    }
+
+    // MARK: - Bridge Setup
+
+    private func setupBridgeSystems() {
+        bridgeLog("[Bridge] Initializing pure native Swift UA-MCU Bridge...")
+
+        // 1. Initialize UAD Client
+        uadClient = UADClient(host: "127.0.0.1", port: 4710)
+
+        // 2. Initialize CoreMIDI Adapter
+        midiAdapter = CoreMIDIAdapter()
+
+        // 3. Initialize MCU Engine
+        mcuEngine = MCUEngine(uadClient: uadClient, sendMIDIFn: { [weak self] bytes in
+            self?.midiAdapter.sendMIDI(bytes)
+        }, voice: VoiceAnnouncer.shared)
+        mcuEngine.wheelMode = config.wheelMode
+
+        // 4. Connect MIDI Port
+        connectMIDIPort(config.port)
+
+        // 5. Connect UAD Client
+        connectUAD()
+    }
+
+    private func connectMIDIPort(_ portNumber: Int) {
+        config.port = portNumber
+        ConfigManager.shared.save(config)
+
+        let success = midiAdapter.connect(portNumber: portNumber) { [weak self] bytes in
+            self?.mcuEngine.handleMidiBytes(bytes)
+        }
+
+        if success {
+            bridgeLog("[Bridge] CoreMIDI connected to SSL V-MIDI Port \(portNumber)")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.mcuEngine.refreshAllSlots()
+            }
+        } else {
+            bridgeLog("[Bridge] Failed to connect to SSL V-MIDI Port \(portNumber)")
+        }
+        updateMenuStatus()
+    }
+
+    private func connectUAD() {
+        uadClient.connect { [weak self] connected in
+            DispatchQueue.main.async {
+                if connected {
+                    bridgeLog("[Bridge] UA Mixer Engine connected successfully")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self?.mcuEngine.refreshAllSlots()
+                    }
+                } else {
+                    bridgeLog("[Bridge] Waiting for UA Mixer Engine at 127.0.0.1:4710...")
+                }
+                self?.updateMenuStatus()
+            }
+        }
+    }
+
+    private func checkConnections() {
+        // Check UAD connection
+        if !uadClient.isConnected {
+            bridgeLog("[Bridge] UAD disconnected, attempting automatic reconnect...")
+            connectUAD()
+        }
+
+        // Check MIDI connection
+        if !midiAdapter.isConnected {
+            bridgeLog("[Bridge] MIDI disconnected, attempting automatic reconnect...")
+            connectMIDIPort(config.port)
+        }
+
+        updateMenuStatus()
+    }
+
+    private func cleanupHardware() {
+        bridgeLog("[Bridge] Cleaning up hardware and disconnecting...")
+        // Reset UF8 Mute/Solo LEDs and Scribble Strips
+        for s in 0..<8 {
+            midiAdapter.sendMIDI([0x90, UInt8(16 + s), 0x00]) // Mute off
+            midiAdapter.sendMIDI([0x90, UInt8(8 + s), 0x00])  // Solo off
+            midiAdapter.sendMIDI([0x90, UInt8(0 + s), 0x00])  // Rec Ready off
+            midiAdapter.sendMIDI([0x90, UInt8(24 + s), 0x00]) // Sel off
+        }
+        mcuEngine.sendLcdText(row: 1, text: " ")
+        mcuEngine.sendLcdText(row: 2, text: " ")
+
+        midiAdapter.close()
+        uadClient.disconnect()
+    }
+
+    // MARK: - Status Bar UI
+
+    private func setupStatusBar() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = statusItem.button {
+            if let image = NSImage(systemSymbolName: "slider.vertical.3", accessibilityDescription: "UA-MCU Bridge") {
+                image.isTemplate = true
+                button.image = image
+            } else {
+                button.title = "UA-MCU"
+            }
+            button.toolTip = "UA-MCU Bridge (SSL UF8 <-> UAD Apollo)"
+        }
+
+        menu = NSMenu()
+        buildMenu()
+        statusItem.menu = menu
+    }
+
+    private func buildMenu() {
+        menu.removeAllItems()
+
+        // 1. Title Header
+        let titleItem = NSMenuItem(title: "UA-MCU Bridge 1.0 (Native Swift)", action: nil, keyEquivalent: "")
+        titleItem.isEnabled = false
+        menu.addItem(titleItem)
+
+        let subtitleItem = NSMenuItem(title: "SSL UF8 ↔ UAD Apollo Console", action: nil, keyEquivalent: "")
+        subtitleItem.isEnabled = false
+        menu.addItem(subtitleItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // 2. Connection Status Items
+        let uadStatus = NSMenuItem(title: "Apollo Console: Checking...", action: nil, keyEquivalent: "")
+        uadStatus.isEnabled = false
+        menu.addItem(uadStatus)
+        self.uadStatusMenuItem = uadStatus
+
+        let midiStatus = NSMenuItem(title: "CoreMIDI: Checking...", action: nil, keyEquivalent: "")
+        midiStatus.isEnabled = false
+        menu.addItem(midiStatus)
+        self.midiStatusMenuItem = midiStatus
+
+        menu.addItem(NSMenuItem.separator())
+
+        // 3. Port Selector Submenu
+        let portMenu = NSMenu(title: "MIDI Port")
+        for p in 1...16 {
+            var label = "SSL V-MIDI Port \(p)"
+            if p == 9 { label += " (DAW 3 - Recommended)" }
+            else if p == 1 { label += " (DAW 1)" }
+            else if p == 5 { label += " (DAW 2)" }
+
+            let item = NSMenuItem(title: label, action: #selector(handleSelectPort(_:)), keyEquivalent: "")
+            item.tag = p
+            item.target = self
+            item.state = (p == config.port) ? .on : .off
+            portMenu.addItem(item)
+        }
+        let portParentItem = NSMenuItem(title: "MIDI Port (SSL 360°)", action: nil, keyEquivalent: "")
+        portParentItem.submenu = portMenu
+        menu.addItem(portParentItem)
+
+        // 4. Channel Wheel Mode Submenu
+        let wheelMenu = NSMenu(title: "Wheel Mode")
+        let monItem = NSMenuItem(title: "Apollo Master Monitor Volume (Default)", action: #selector(handleWheelMode(_:)), keyEquivalent: "")
+        monItem.tag = 1
+        monItem.target = self
+        monItem.state = (config.wheelMode == "monitor") ? .on : .off
+        wheelMenu.addItem(monItem)
+
+        let trackItem = NSMenuItem(title: "Track Navigation (1-Track Step)", action: #selector(handleWheelMode(_:)), keyEquivalent: "")
+        trackItem.tag = 2
+        trackItem.target = self
+        trackItem.state = (config.wheelMode == "channel") ? .on : .off
+        wheelMenu.addItem(trackItem)
+
+        let wheelParentItem = NSMenuItem(title: "Channel Wheel Mode", action: nil, keyEquivalent: "")
+        wheelParentItem.submenu = wheelMenu
+        menu.addItem(wheelParentItem)
+
+        // 5. Voice Guidance Submenu
+        let voiceMenu = NSMenu(title: "Voice Guidance")
+        let toggleVoiceItem = NSMenuItem(title: "Speech Feedback (Talkback)", action: #selector(handleToggleVoice(_:)), keyEquivalent: "")
+        toggleVoiceItem.target = self
+        toggleVoiceItem.state = config.speechFeedback ? .on : .off
+        voiceMenu.addItem(toggleVoiceItem)
+        voiceMenu.addItem(NSMenuItem.separator())
+
+        // Speech Speed Submenu
+        let speedMenu = NSMenu(title: "Voiceover Speed")
+        let speedLevels: [(String, Float)] = [
+            ("0.5x (Slow)", 0.40),
+            ("0.75x (Relaxed)", 0.46),
+            ("1.0x (Normal - Default)", 0.52),
+            ("1.25x (Brisk)", 0.57),
+            ("1.5x (Fast)", 0.62),
+            ("1.75x (Very Fast)", 0.67),
+            ("2.0x (Pro Speed)", 0.72)
+        ]
+        for (sTitle, sVal) in speedLevels {
+            let item = NSMenuItem(title: sTitle, action: #selector(handleSelectVoiceSpeed(_:)), keyEquivalent: "")
+            item.representedObject = sVal
+            item.target = self
+            let isCurrent = abs(config.speechRate - sVal) < 0.025
+            item.state = (config.speechFeedback && isCurrent) ? .on : .off
+            speedMenu.addItem(item)
+        }
+        let currentSpeedTitle = speedLevels.first(where: { abs(config.speechRate - $0.1) < 0.025 })?.0.components(separatedBy: " ").first ?? "1.0x"
+        let speedParentItem = NSMenuItem(title: "Voiceover Speed (\(currentSpeedTitle))", action: nil, keyEquivalent: "")
+        speedParentItem.submenu = speedMenu
+        voiceMenu.addItem(speedParentItem)
+
+        // Speech Volume Submenu
+        let volMenu = NSMenu(title: "Voice Volume")
+        let volLevels: [(String, Float)] = [
+            ("100% (Maximum)", 1.0),
+            ("75%", 0.75),
+            ("50% (Default)", 0.5),
+            ("25%", 0.25),
+            ("0% (Turn Off)", 0.0)
+        ]
+        for (vTitle, vVal) in volLevels {
+            let item = NSMenuItem(title: vTitle, action: #selector(handleSelectVoiceVolume(_:)), keyEquivalent: "")
+            item.representedObject = vVal
+            item.target = self
+            let isCurrent = abs(config.speechVolume - vVal) < 0.05
+            item.state = (config.speechFeedback && isCurrent) ? .on : .off
+            volMenu.addItem(item)
+        }
+        let volParentItem = NSMenuItem(title: "Voice Volume (\(Int(round(config.speechVolume * 100)))%)", action: nil, keyEquivalent: "")
+        volParentItem.submenu = volMenu
+        voiceMenu.addItem(volParentItem)
+
+        let voiceParentItem = NSMenuItem(title: "Voice Guidance (Talkback)", action: nil, keyEquivalent: "")
+        voiceParentItem.submenu = voiceMenu
+        menu.addItem(voiceParentItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // 6. Maintenance & Diagnostics
+        let refreshItem = NSMenuItem(title: "Refresh Hardware Surface", action: #selector(handleRefreshSurface(_:)), keyEquivalent: "r")
+        refreshItem.target = self
+        menu.addItem(refreshItem)
+
+        let reconnectItem = NSMenuItem(title: "Reconnect All Connections", action: #selector(handleReconnect(_:)), keyEquivalent: "")
+        reconnectItem.target = self
+        menu.addItem(reconnectItem)
+
+        let revealItem = NSMenuItem(title: "Reveal App in Finder...", action: #selector(handleRevealInFinder(_:)), keyEquivalent: "")
+        revealItem.target = self
+        menu.addItem(revealItem)
+
+        let openLogItem = NSMenuItem(title: "Open Log File...", action: #selector(handleOpenLogFile(_:)), keyEquivalent: "")
+        openLogItem.target = self
+        menu.addItem(openLogItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // 7. Quit
+        let quitItem = NSMenuItem(title: "Quit UA-MCU Bridge", action: #selector(handleQuit(_:)), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        updateMenuStatus()
+    }
+
+    private func updateMenuStatus() {
+        if let uItem = uadStatusMenuItem {
+            if uadClient != nil && uadClient.isConnected {
+                let chCount = uadClient.channels.count
+                uItem.title = "● Apollo Console: Online (\(chCount) channels)"
+            } else {
+                uItem.title = "○ Apollo Console: Connecting..."
+            }
+        }
+
+        if let mItem = midiStatusMenuItem {
+            if midiAdapter != nil && midiAdapter.isConnected {
+                mItem.title = "● SSL UF8: Connected (Port \(config.port))"
+            } else {
+                mItem.title = "○ SSL UF8: Disconnected (Port \(config.port))"
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    @objc private func handleSelectPort(_ sender: NSMenuItem) {
+        let newPort = sender.tag
+        connectMIDIPort(newPort)
+        buildMenu()
+        VoiceAnnouncer.shared.speak("Switched to SSL Port \(newPort)")
+    }
+
+    @objc private func handleWheelMode(_ sender: NSMenuItem) {
+        if sender.tag == 1 {
+            config.wheelMode = "monitor"
+            mcuEngine.wheelMode = "monitor"
+            VoiceAnnouncer.shared.speak("Wheel set to Monitor Volume")
+        } else {
+            config.wheelMode = "channel"
+            mcuEngine.wheelMode = "channel"
+            VoiceAnnouncer.shared.speak("Wheel set to Track Navigation")
+        }
+        ConfigManager.shared.save(config)
+        buildMenu()
+    }
+
+    @objc private func handleToggleVoice(_ sender: NSMenuItem) {
+        config.speechFeedback.toggle()
+        VoiceAnnouncer.shared.isEnabled = config.speechFeedback
+        ConfigManager.shared.save(config)
+        buildMenu()
+        if config.speechFeedback {
+            VoiceAnnouncer.shared.speak("Voice guidance enabled")
+        }
+    }
+
+    @objc private func handleSelectVoiceVolume(_ sender: NSMenuItem) {
+        if let vol = sender.representedObject as? Float {
+            config.speechVolume = vol
+            if vol <= 0.001 {
+                config.speechFeedback = false
+                VoiceAnnouncer.shared.isEnabled = false
+            } else {
+                config.speechFeedback = true
+                VoiceAnnouncer.shared.isEnabled = true
+                VoiceAnnouncer.shared.volume = vol
+            }
+            ConfigManager.shared.save(config)
+            buildMenu()
+            VoiceAnnouncer.shared.speak("Volume set to \(Int(vol * 100)) percent")
+        }
+    }
+
+    @objc private func handleSelectVoiceSpeed(_ sender: NSMenuItem) {
+        if let rate = sender.representedObject as? Float {
+            config.speechRate = rate
+            VoiceAnnouncer.shared.speechRate = rate
+            ConfigManager.shared.save(config)
+            buildMenu()
+            let title = sender.title.components(separatedBy: " (").first ?? sender.title
+            VoiceAnnouncer.shared.speak("Voiceover speed set to \(title)")
+        }
+    }
+
+    @objc private func handleRefreshSurface(_ sender: NSMenuItem) {
+        mcuEngine.refreshAllSlots()
+        VoiceAnnouncer.shared.speak("Hardware surface refreshed")
+    }
+
+    @objc private func handleReconnect(_ sender: NSMenuItem) {
+        VoiceAnnouncer.shared.speak("Reconnecting bridge")
+        uadClient.disconnect()
+        midiAdapter.close()
+        connectMIDIPort(config.port)
+        connectUAD()
+    }
+
+    @objc private func handleRevealInFinder(_ sender: NSMenuItem) {
+        let appURL = Bundle.main.bundleURL
+        NSWorkspace.shared.activateFileViewerSelecting([appURL])
+    }
+
+    @objc private func handleOpenLogFile(_ sender: NSMenuItem) {
+        AppLogger.shared.openLog()
+    }
+
+    @objc private func handleQuit(_ sender: NSMenuItem) {
+        cleanupHardware()
+        NSApplication.shared.terminate(nil)
+    }
+}
+
+// MARK: - Entry Point
+
+let app = NSApplication.shared
+let delegate = AppDelegate()
+app.delegate = delegate
+app.setActivationPolicy(.accessory) // Menu bar only app, no dock icon
+app.run()
