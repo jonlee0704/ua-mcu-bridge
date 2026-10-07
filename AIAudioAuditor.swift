@@ -190,6 +190,178 @@ public final class AIAudioAuditor {
             if p > maxSessionPeak { maxSessionPeak = p }
         }
 
+        // =========================================================================
+        // STEP 2: ONE-TOUCH MOTORIZED FADER AUTO-ROUGH MIX
+        // Analyzes musical roles & incoming peak energies, then aligns all faders
+        // =========================================================================
+        let activeChannels = allChannels.filter { (recordedPeaks[$0.id] ?? $0.meterPeak) > -50.0 }
+        if activeChannels.count >= 2 {
+            let roughMixSuggestion = AISuggestion(
+                id: "auto_rough_mix",
+                channelId: -1,
+                channelName: "Rough Mix",
+                issueTitle: "One-Touch Auto-Rough Mix",
+                voiceDescription: "I analyzed \(activeChannels.count) active tracks in your session. Would you like me to auto-balance all motorized faders into a clean rough mix with vocal in front, rhythm section locked, and 6 d B master headroom?",
+                lcdBanner: "[AUTO-ROUGH MIX] BALANCE ALL FADERS? ▲YES ▼NO",
+                applyAction: { [weak self] in
+                    guard let self = self else { return "" }
+                    for ch in allChannels {
+                        let pk = self.recordedPeaks[ch.id] ?? ch.meterPeak
+                        let lower = ch.name.lowercased()
+                        if pk < -60.0 {
+                            // Dead / Inactive track -> Pull fader to floor (-144 dB)
+                            let tap = UADCurve.dbToTapered(-144.0)
+                            self.uad.setFader(chId: ch.id, tapered: tap)
+                            continue
+                        }
+                        // Musical role target peak levels (dBFS)
+                        let targetAudiblePeak: Double
+                        if lower.contains("vox") || lower.contains("vocal") || lower.contains("lead") || lower.contains("mic") {
+                            targetAudiblePeak = -12.0 // Lead Vocal right in front
+                        } else if lower.contains("kd") || lower.contains("kick") || lower.contains("bd") {
+                            targetAudiblePeak = -14.0 // Kick anchor
+                        } else if lower.contains("sd") || lower.contains("snare") {
+                            targetAudiblePeak = -15.0 // Snare backbeat
+                        } else if lower.contains("bass") || lower.contains("ampeg") {
+                            targetAudiblePeak = -16.0 // Bass foundation
+                        } else if lower.contains("t1") || lower.contains("t2") || lower.contains("t3") || lower.contains("tom") {
+                            targetAudiblePeak = -18.0 // Toms
+                        } else if lower.contains("oh") || lower.contains("cymbal") || lower.contains("hat") {
+                            targetAudiblePeak = -20.0 // Cymbals air
+                        } else if lower.contains("qc") || lower.contains("guitar") || lower.contains("gtr") || lower.contains("juno") || lower.contains("keys") {
+                            targetAudiblePeak = -17.0 // Guitars / Synths
+                        } else if ch.chType == "aux" {
+                            targetAudiblePeak = -18.0 // FX returns
+                        } else {
+                            targetAudiblePeak = -16.0
+                        }
+                        let deltaDb = targetAudiblePeak - pk
+                        let newFaderDb = max(-144.0, min(6.0, ch.faderDb + deltaDb))
+                        let tap = UADCurve.dbToTapered(newFaderDb)
+                        self.uad.setFader(chId: ch.id, tapered: tap)
+                    }
+                    // Immediately refresh physical motorized faders on active UF8 bank
+                    if let m = self.mcu {
+                        for slot in 0..<8 {
+                            let chId = m.bankOffset + slot
+                            if let ch = self.uad.channels[chId] {
+                                m.sendFaderPosition(slot: slot, normVal: ch.fader)
+                            }
+                        }
+                    }
+                    return "Balanced all motorized faders into a clean rough mix."
+                }
+            )
+            findings.append(roughMixSuggestion)
+        }
+
+        // =========================================================================
+        // STEP 1A: MULTI-MIC PHASE RELATIONSHIP & POLARITY INVERT (Ø)
+        // Checks paired acoustic mics (Snare Top/Bottom, Kick In/Out) for cancellation
+        // =========================================================================
+        let snareTop = allChannels.first { ch in
+            let l = ch.name.lowercased()
+            return (l == "sd" || l.starts(with: "sd ") || l.contains("snare")) &&
+                   !l.contains("bottom") && !l.contains("btm") && !l.contains("bot") && !l.contains("under")
+        }
+        let snareBtm = allChannels.first { ch in
+            let l = ch.name.lowercased()
+            return l.contains("sd-bottom") || l.contains("sd-btm") || l.contains("snare-b") ||
+                   l.contains("snare bottom") || l.contains("snare_btm") || l.contains("sd_btm") ||
+                   (l.contains("bottom") && (l.contains("sd") || l.contains("snare")))
+        }
+        if let top = snareTop, let btm = snareBtm {
+            let topPeak = recordedPeaks[top.id] ?? top.meterPeak
+            let btmPeak = recordedPeaks[btm.id] ?? btm.meterPeak
+            if topPeak > -45.0 && btmPeak > -45.0 && btm.preamp.hasPreamp && !btm.preamp.phase {
+                let phaseSuggestion = AISuggestion(
+                    id: "phase_snare_\(btm.id)",
+                    channelId: btm.id,
+                    channelName: btm.name,
+                    issueTitle: "Snare Phase Cancellation",
+                    voiceDescription: "Snare Bottom on \(btm.name) is in normal polarity with Snare Top, causing low-mid phase cancellation. Would you like me to invert the phase on \(btm.name)?",
+                    lcdBanner: "[\(btm.name.uppercased())] PHASE CANCEL: INVERT Ø? ▲YES ▼NO",
+                    applyAction: { [weak self] in
+                        guard let self = self else { return "" }
+                        self.uad.setPreampPhase(chId: btm.id, inverted: true)
+                        return "Inverted phase polarity on \(btm.name)."
+                    }
+                )
+                findings.append(phaseSuggestion)
+            }
+        }
+
+        let kickIn = allChannels.first { ch in
+            let l = ch.name.lowercased()
+            return (l == "kd" || l.starts(with: "kd ") || l.contains("kick in") || l.contains("kick-in") || l.contains("kd-in")) && !l.contains("out")
+        }
+        let kickOut = allChannels.first { ch in
+            let l = ch.name.lowercased()
+            return l.contains("kd-out") || l.contains("kd_out") || l.contains("kick out") || l.contains("kick-out")
+        }
+        if let kin = kickIn, let kout = kickOut {
+            let kinPeak = recordedPeaks[kin.id] ?? kin.meterPeak
+            let koutPeak = recordedPeaks[kout.id] ?? kout.meterPeak
+            if kinPeak > -45.0 && koutPeak > -45.0 && kout.preamp.hasPreamp && !kout.preamp.phase {
+                let phaseSuggestion = AISuggestion(
+                    id: "phase_kick_\(kout.id)",
+                    channelId: kout.id,
+                    channelName: kout.name,
+                    issueTitle: "Kick Dual-Mic Phase Alignment",
+                    voiceDescription: "Kick In and Kick Out dual mics are both active. Inverting phase on \(kout.name) can align low-end punch. Would you like me to invert Kick Out phase?",
+                    lcdBanner: "[\(kout.name.uppercased())] KICK DUAL-MIC: INVERT Ø? ▲YES ▼NO",
+                    applyAction: { [weak self] in
+                        guard let self = self else { return "" }
+                        self.uad.setPreampPhase(chId: kout.id, inverted: true)
+                        return "Inverted phase polarity on \(kout.name)."
+                    }
+                )
+                findings.append(phaseSuggestion)
+            }
+        }
+
+        // =========================================================================
+        // STEP 1B: KICK & BASS LOW-END COLLISION RESOLVER
+        // Detects competing sub energy and tucks bass to create a clear kick pocket
+        // =========================================================================
+        let kickPrimary = allChannels.first { ch in
+            let l = ch.name.lowercased()
+            return (l == "kd" || l.contains("kick") || l.contains("bd")) && ch.chType != "aux"
+        }
+        let bassPrimary = allChannels.first { ch in
+            let l = ch.name.lowercased()
+            return (l.contains("bass") || l.contains("ampeg") || l.contains("sub")) && ch.chType != "aux"
+        }
+        if let kch = kickPrimary, let bch = bassPrimary {
+            let kPeak = recordedPeaks[kch.id] ?? kch.meterPeak
+            let bPeak = recordedPeaks[bch.id] ?? bch.meterPeak
+            if kPeak > -28.0 && bPeak > -28.0 {
+                let collisionSuggestion = AISuggestion(
+                    id: "collision_\(bch.id)",
+                    channelId: bch.id,
+                    channelName: bch.name,
+                    issueTitle: "Kick & Bass Low-End Masking",
+                    voiceDescription: "Kick drum on \(kch.name) and Bass on \(bch.name) are competing for sub headroom. Would you like me to tuck \(bch.name) down by 3 d B so the kick cuts through clearly?",
+                    lcdBanner: "[\(bch.name.uppercased())] KICK/BASS MASK: TUCK BASS -3dB? ▲YES ▼NO",
+                    applyAction: { [weak self] in
+                        guard let self = self else { return "" }
+                        let currentDb = bch.faderDb
+                        let targetDb = max(-144.0, currentDb - 3.0)
+                        let tap = UADCurve.dbToTapered(targetDb)
+                        self.uad.setFader(chId: bch.id, tapered: tap)
+                        if let m = self.mcu {
+                            let slot = bch.id - m.bankOffset
+                            if slot >= 0 && slot < 8 {
+                                m.sendFaderPosition(slot: slot, normVal: tap)
+                            }
+                        }
+                        return "Tucked \(bch.name) down by 3 d B for clean sub clarity."
+                    }
+                )
+                findings.append(collisionSuggestion)
+            }
+        }
+
         for ch in allChannels {
             let chId = ch.id
             let chName = ch.name

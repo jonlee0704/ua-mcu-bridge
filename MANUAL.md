@@ -377,8 +377,11 @@ Triggered via the **`FINE` key (`Note 83` / `0x53`)**, the AI Studio Co-Producer
    * **`RIGHT ARROW` (►):** Advance to next suggestion.
    * **`LEFT ARROW` (◄):** Repeat current suggestion or go back to previous finding.
    * **`UP ARROW` (▲):** **YES / Apply Fix Directly to Apollo Hardware:**
+     * **One-Touch Auto-Rough Mix:** Physically balances all 8–32 motorized faders on your UF8 based on musical role and incoming peak energy (Vocal at -12 dBFS, Kick at -14 dBFS, Snare at -15 dBFS, Bass at -16 dBFS, Guitars at -17 dBFS, inactive tracks to `-oo dB`). Master bus has 6 dB clean headroom.
+     * **Snare / Dual-Mic Phase Coherence (Ø):** Inverts hardware preamp phase polarity on bottom snare mic (`SD-Bottom`) or Kick Out (`KD-Out`) to eliminate comb filtering and restore fat low-mid punch.
+     * **Kick-Bass Low-End Masking:** Tucks Bass fader down by 3 dB to eliminate sub competition and give Kick drum an authoritative low-end pocket.
      * **Clipping / Overload:** Automatically trims analog preamp gain (or channel fader) down by **4 dB** for clean converter headroom.
-     * **Muted Audio:** Unmutes the track in Apollo Console.
+     * **Muted Audio:** Unmutes active tracks in Apollo Console.
      * **Low-Frequency Rumble / Mud:** Engages the Apollo **75 Hz Low-Cut filter** on vocal, speech, or acoustic tracks.
      * **Session Complete:** When all items are reviewed, pressing **Up** re-runs the test to verify your fixes!
    * **`DOWN ARROW` (▼):** **NO / Skip:** Keeps your current setting and moves to the next finding.
