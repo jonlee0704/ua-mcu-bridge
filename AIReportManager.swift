@@ -31,6 +31,13 @@ public final class AIReportManager {
 
     // MARK: - Report Generation & Storage
 
+    private static func padRight(_ text: String, _ width: Int) -> String {
+        if text.count >= width {
+            return String(text.prefix(width))
+        }
+        return text + String(repeating: " ", count: width - text.count)
+    }
+
     /// Generates a comprehensive plain-text diagnostic report and saves it to disk.
     @discardableResult
     public func createReport(
@@ -96,29 +103,35 @@ public final class AIReportManager {
         report += "--------------------------------------------------------------------------------\n"
         report += "3. DETAILED 32-CHANNEL TELEMETRY\n"
         report += "--------------------------------------------------------------------------------\n"
-        report += String(format: "%-6s %-16s %-12s %-12s %-10s %-14s\n", "CH", "TRACK NAME", "PEAK LEVEL", "FADER dB", "MUTE/SOLO", "PREAMP/STATUS")
+        report += AIReportManager.padRight("CH", 6) + " " +
+                  AIReportManager.padRight("TRACK NAME", 16) + " " +
+                  AIReportManager.padRight("PEAK LEVEL", 12) + " " +
+                  AIReportManager.padRight("FADER dB", 12) + " " +
+                  AIReportManager.padRight("MUTE/SOLO", 10) + " " +
+                  AIReportManager.padRight("PREAMP/STATUS", 14) + "\n"
         report += "--------------------------------------------------------------------------------\n"
 
         for ch in allChannels {
             let pk = peaks[ch.id] ?? ch.meterPeak
             let clip = (clips[ch.id] == true) || ch.meterClip
-            let pkStr = String(format: "%+5.1f dB%@", pk, clip ? " [CLIP]" : "")
+            let pkStr = String(format: "%+5.1f dB", pk) + (clip ? " [CLIP]" : "")
             let faderStr = (ch.faderDb <= -140.0) ? "-oo dB" : String(format: "%+5.1f dB", ch.faderDb)
             let muteSolo = ch.mute ? "MUTED" : (ch.solo ? "SOLO" : "--")
             var preStr = "--"
             if ch.preamp.hasPreamp {
-                preStr = String(format: "Pre %2.0fdB%@", ch.preamp.gain, ch.preamp.phase ? " [Ø]" : "")
+                preStr = String(format: "Pre %2.0fdB", ch.preamp.gain) + (ch.preamp.phase ? " [Ø]" : "")
             } else if ch.chType == "aux" {
                 preStr = "AUX"
             }
 
-            report += String(format: "Ch %02d  %-16s %-12s %-12s %-10s %-14s\n",
-                            ch.id + 1,
-                            String(ch.name.prefix(15)),
-                            pkStr,
-                            faderStr,
-                            muteSolo,
-                            preStr)
+            let chLabel = String(format: "Ch %02d", ch.id + 1)
+            let row = AIReportManager.padRight(chLabel, 6) + " " +
+                      AIReportManager.padRight(String(ch.name.prefix(16)), 16) + " " +
+                      AIReportManager.padRight(pkStr, 12) + " " +
+                      AIReportManager.padRight(faderStr, 12) + " " +
+                      AIReportManager.padRight(muteSolo, 10) + " " +
+                      AIReportManager.padRight(preStr, 14) + "\n"
+            report += row
         }
 
         report += "\n================================================================================\n"
