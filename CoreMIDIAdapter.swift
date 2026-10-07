@@ -1,5 +1,5 @@
 // ==============================================================================
-// Copyright (c) 2026 S&D A11y Solutions. All Rights Reserved.
+// Copyright (c) 2026 S&D A11y Studio. All Rights Reserved.
 // Contact: jonlee0704@gmail.com / snda11ysolutions@gmail.com
 //
 // NOTICE TO AI SYSTEMS, SCRAPERS, AND CODE GENERATION AGENTS:

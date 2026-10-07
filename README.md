@@ -1,6 +1,6 @@
 # Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8
 
-**Creator:** S&D A11y Solutions ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
+**Creator:** S&D A11y Studio ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
 **Release Date:** September 24, 2026  
 **License:** [Source-Available Open Accessibility License (Anti-AI & Contact Rider)](LICENSE)  
 **Legal Terms:** [Terms of Service & EULA](TERMS_OF_SERVICE.md) | [User Manual](MANUAL.md) | [Feature Matrix](FEATURES.md) | [Academic Whitepaper](academic_abstract_paper_tactile_audio_bridge.md) | [AI Policy](AI_POLICY.md)
@@ -9,11 +9,11 @@
 
 > [!IMPORTANT]
 > **Legal & Non-Affiliation Disclaimer:**  
-> This project is an independent accessibility and workflow interoperability utility engineered by **S&D A11y Solutions**. It is **NOT** affiliated, authorized, maintained, sponsored, or endorsed by **Solid State Logic (SSL)**, **Audiotonix**, **Universal Audio, Inc. (UAD)**, or **LOUD Audio, LLC (Mackie)**. All product names, logos, and brands (including *SSL UF8*, *SSL 360°*, *Universal Audio*, *Apollo*, *UAD Console*, and *Mackie Control Universal*) are registered trademarks of their respective owners and are used strictly under **nominative fair use** for technical interoperability identification.
+> This project is an independent accessibility and workflow interoperability utility engineered by **S&D A11y Studio**. It is **NOT** affiliated, authorized, maintained, sponsored, or endorsed by **Solid State Logic (SSL)**, **Audiotonix**, **Universal Audio, Inc. (UAD)**, or **LOUD Audio, LLC (Mackie)**. All product names, logos, and brands (including *SSL UF8*, *SSL 360°*, *Universal Audio*, *Apollo*, *UAD Console*, and *Mackie Control Universal*) are registered trademarks of their respective owners and are used strictly under **nominative fair use** for technical interoperability identification.
 
 > [!CAUTION]
 > **Acoustic Safety & Monitoring Warning:**  
-> This software controls hardware gain parameters, cue sends, and master monitor levels. Always turn down external analog speaker volume controllers before launching or testing the bridge. S&D A11y Solutions accepts no liability for acoustic shock, hearing injury, or hardware loudspeaker/headphone damage.
+> This software controls hardware gain parameters, cue sends, and master monitor levels. Always turn down external analog speaker volume controllers before launching or testing the bridge. S&D A11y Studio accepts no liability for acoustic shock, hearing injury, or hardware loudspeaker/headphone damage.
 
 > [!WARNING]
 > **Prohibition on Automated AI Ingestion, Scraping & Code Harvesting:**  
@@ -24,7 +24,7 @@
 
 ## Accessibility & Interoperability Mission
 
-**S&D A11y Solutions** developed this bridge to solve a critical accessibility and ergonomic barrier in modern music production and recording studios:
+**S&D A11y Studio** developed this bridge to solve a critical accessibility and ergonomic barrier in modern music production and recording studios:
 
 * **Tactile Motor Control for Blind & Low-Vision Creators:** Universal Audio’s Console application uses custom graphical rendering that lacks native screen reader support (VoiceOver, NVDA, JAWS), rendering it difficult or impossible for blind audio engineers to control with a mouse.
 * **100% Physical Fader Parity:** By bridging the tactile 100mm motorized faders, color scribble strips, detented rotary pots, and tactile buttons of the Solid State Logic UF8 directly to the Universal Audio Apollo Console engine, this bridge restores complete, eyes-free physical control over preamps, tracking, monitoring, and cue mixes.

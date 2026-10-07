@@ -1,7 +1,7 @@
 # Terms of Service, EULA & AI Ingestion Policy
 
 **Effective Date:** October 6, 2026  
-**Developer / Copyright Owner:** S&D A11y Solutions  
+**Developer / Copyright Owner:** S&D A11y Studio  
 **Contact Email:** [jonlee0704@gmail.com](mailto:jonlee0704@gmail.com) (cc: [snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
 **Product:** Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8 ("Software", "UA-MCU Bridge")  
 **Official Repository:** [https://github.com/jonlee0704/ua-mcu-bridge](https://github.com/jonlee0704/ua-mcu-bridge)
@@ -33,13 +33,13 @@ Pursuant to Article 4(3) of the European Union Directive on Copyright in the Dig
 ## 2. Permitted Open Source & Accessibility Usage
 
 2.1 **Personal & Non-Commercial Accessibility License:**
-S&D A11y Solutions grants a non-exclusive, non-transferable, revocable license to human individuals to inspect and operate the Software solely for:
+S&D A11y Studio grants a non-exclusive, non-transferable, revocable license to human individuals to inspect and operate the Software solely for:
 * Personal creative music production on their personal computer and audio interfaces;
 * Assistive accessibility evaluation and daily use by blind or visually impaired audio engineers;
 * Non-commercial academic research into accessible audio interfaces.
 
 2.2 **Commercial Restrictions:**
-Commercial deployment, bundling into paid software/hardware products, or resale requires a separate commercial license agreement signed by S&D A11y Solutions.
+Commercial deployment, bundling into paid software/hardware products, or resale requires a separate commercial license agreement signed by S&D A11y Studio.
 
 ---
 

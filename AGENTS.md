@@ -1,7 +1,7 @@
 # Agent Instructions & AI Access Directives
 
 You are accessing the repository: `jonlee0704/ua-mcu-bridge`
-Copyright (c) 2026 S&D A11y Solutions. All Rights Reserved.
+Copyright (c) 2026 S&D A11y Studio. All Rights Reserved.
 Contact: jonlee0704@gmail.com
 
 ## RESTRICTIONS ON CODE COPYING & EXTRACTION

@@ -1,6 +1,6 @@
 # Tactile Hardware Accessibility Bridge: Full Feature Reference Matrix
 **SSL UF8 $\longleftrightarrow$ Universal Audio Apollo Console**  
-**Creator:** S&D A11y Solutions ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
+**Creator:** S&D A11y Studio ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
 **Last Updated:** October 4, 2026  
 
 ---

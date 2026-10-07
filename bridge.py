@@ -2,7 +2,7 @@
 """
 Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8
 Connects SSL UF8 (via Mackie Control Universal protocol) to UAD Console (raw TCP 127.0.0.1:4710)
-Creator: S&D A11y Solutions (snda11ysolutions@gmail.com)
+Creator: S&D A11y Studio (snda11ysolutions@gmail.com)
 Date: September 24, 2026
 License & Terms: See TERMS_OF_SERVICE.md and LICENSE
 """

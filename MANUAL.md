@@ -1,7 +1,7 @@
 # Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8
 ## Comprehensive Operator's & Technical Reference Manual
 
-**Creator:** S&D A11y Solutions ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
+**Creator:** S&D A11y Studio ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
 **Last Updated:** October 6, 2026  
 **License & Terms:** [MIT with Audio Safety Rider](LICENSE) | [Terms of Service](TERMS_OF_SERVICE.md) | [Feature Matrix](FEATURES.md) | [Academic Whitepaper](academic_abstract_paper_tactile_audio_bridge.md)  
 **GitHub Repository:** [https://github.com/jonlee0704/ua-mcu-bridge](https://github.com/jonlee0704/ua-mcu-bridge)
@@ -10,7 +10,7 @@
 
 > [!IMPORTANT]
 > **Legal & Non-Affiliation Notice:**  
-> This software is an independent interoperability and accessibility utility developed by **S&D A11y Solutions**. It is **NOT affiliated with, sponsored by, or endorsed by** Solid State Logic (SSL), Audiotonix, Universal Audio, Inc. (UAD), or LOUD Audio, LLC (Mackie). All product names and registered marks are used purely for nominative identification under fair use doctrine.
+> This software is an independent interoperability and accessibility utility developed by **S&D A11y Studio**. It is **NOT affiliated with, sponsored by, or endorsed by** Solid State Logic (SSL), Audiotonix, Universal Audio, Inc. (UAD), or LOUD Audio, LLC (Mackie). All product names and registered marks are used purely for nominative identification under fair use doctrine.
 
 > [!CAUTION]
 > **Acoustic Safety Warning:**  
@@ -498,12 +498,12 @@ tail -f ~/Library/Logs/UAMCUBridge.log
 ## 9. Legal Disclaimers & Warranties
 
 ### 9.1 Creator Attribution
-* **Developer:** S&D A11y Solutions
+* **Developer:** S&D A11y Studio
 * **Contact:** [snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com)
 * **Canonical Specifications:** [FEATURES.md](FEATURES.md) | [Academic Whitepaper](academic_abstract_paper_tactile_audio_bridge.md)
 
 ### 9.2 Nominative Fair Use Disclaimer
-S&D A11y Solutions is an independent developer and is not affiliated with, endorsed by, or sponsored by Solid State Logic (SSL), Audiotonix, Universal Audio, Inc. (UAD), or LOUD Audio, LLC (Mackie). All product names, trademarks, and logos are property of their respective owners and are used strictly under nominative fair use for interoperability and accessibility identification.
+S&D A11y Studio is an independent developer and is not affiliated with, endorsed by, or sponsored by Solid State Logic (SSL), Audiotonix, Universal Audio, Inc. (UAD), or LOUD Audio, LLC (Mackie). All product names, trademarks, and logos are property of their respective owners and are used strictly under nominative fair use for interoperability and accessibility identification.
 
 ### 9.3 Acoustic Safety & "AS-IS" Warranty
-Digital control of audio levels carries acoustic risks. S&D A11y Solutions accepts no liability for acoustic shock, hearing injury, or hardware speaker blowout. Always attenuate external analog volume controls before testing gain adjustments. This software is provided "AS IS", without warranty of any kind, express or implied.
+Digital control of audio levels carries acoustic risks. S&D A11y Studio accepts no liability for acoustic shock, hearing injury, or hardware speaker blowout. Always attenuate external analog volume controls before testing gain adjustments. This software is provided "AS IS", without warranty of any kind, express or implied.

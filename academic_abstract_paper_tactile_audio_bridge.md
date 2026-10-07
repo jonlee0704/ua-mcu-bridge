@@ -1,6 +1,6 @@
 # Tactile-Acoustic Bridge: Non-Visual Tactile Control and Multimodal AI Telemetry for Professional DSP Audio Mixers
 
-**Authors:** S&D A11y Solutions ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
+**Authors:** S&D A11y Studio ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
 **Date:** October 2026  
 **Document Classification:** Technical Whitepaper & Academic Specification  
 **System Target:** SSL UF8 Hardware Controller $\longleftrightarrow$ Universal Audio Apollo Console DSP System  
@@ -226,5 +226,5 @@ Future research directions include:
 6. World Wide Web Consortium (W3C), *User Agent Accessibility Guidelines (UAAG) 2.0*, W3C Working Group Note. [https://www.w3.org/TR/UAAG20/](https://www.w3.org/TR/UAAG20/)
 7. Metatla, O., Bryan-Kinns, N., Stockman, T., & Martin, F., "Designing with and for Blind Musicians: Non-Visual Display and Tangible Interaction for Digital Audio Workstations," *ACM Transactions on Accessible Computing (TACCESS)*, Vol. 11, No. 2, 2018. [https://dl.acm.org/doi/10.1145/3196996](https://dl.acm.org/doi/10.1145/3196996)
 8. Audio Engineering Society (AES), *AES Recommended Practice for Professional Audio: Guidelines for Audio Metering and Loudness*, AES Standards Committee. [https://www.aes.org/standards/](https://www.aes.org/standards/)
-9. S&D A11y Solutions, *UA-MCU Bridge: Complete Feature Reference Matrix*, Canonical Specification, 2026. [https://github.com/jonlee0704/ua-mcu-bridge/blob/main/FEATURES.md](https://github.com/jonlee0704/ua-mcu-bridge/blob/main/FEATURES.md)
-10. S&D A11y Solutions, *AI Audio Auditor Diagnostic Engine Specification*, Source Implementation, 2026. [https://github.com/jonlee0704/ua-mcu-bridge/blob/main/AIAudioAuditor.swift](https://github.com/jonlee0704/ua-mcu-bridge/blob/main/AIAudioAuditor.swift)
+9. S&D A11y Studio, *UA-MCU Bridge: Complete Feature Reference Matrix*, Canonical Specification, 2026. [https://github.com/jonlee0704/ua-mcu-bridge/blob/main/FEATURES.md](https://github.com/jonlee0704/ua-mcu-bridge/blob/main/FEATURES.md)
+10. S&D A11y Studio, *AI Audio Auditor Diagnostic Engine Specification*, Source Implementation, 2026. [https://github.com/jonlee0704/ua-mcu-bridge/blob/main/AIAudioAuditor.swift](https://github.com/jonlee0704/ua-mcu-bridge/blob/main/AIAudioAuditor.swift)
