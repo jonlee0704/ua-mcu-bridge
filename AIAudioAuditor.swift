@@ -360,24 +360,80 @@ public final class AIAudioAuditor {
             if clipped {
                 let currentGain = ch.preamp.gain
                 let isPreamp = ch.preamp.hasPreamp
+                // Best practice target: -14.0 dBFS peak (leaving 14 dB of converter headroom)
+                let targetHeadroomPeak = -14.0
+                let trimDb = max(6.0, round(peak - targetHeadroomPeak))
                 let suggestion = AISuggestion(
                     id: "clip_\(chId)",
                     channelId: chId,
                     channelName: chName,
                     issueTitle: "Clipping / Overload",
-                    voiceDescription: "Channel \(chId + 1), \(chName), is clipping into the red at \(String(format: "%.1f", peak)) d B. Would you like me to auto-trim gain down by 4 d B for clean converter headroom?",
-                    lcdBanner: "[CH \(chId + 1)] CLIP: AUTO-TRIM GAIN (-4 dB)? ▲YES ▼NO",
+                    voiceDescription: "Channel \(chId + 1), \(chName), is clipping at \(String(format: "%.1f", peak)) d B. Best practice recommends 14 d B of headroom, targeting minus 14 d B F S. Would you like me to auto-trim gain down by \(Int(trimDb)) d B to clear clipping and protect your converters?",
+                    lcdBanner: "[CH \(chId + 1)] CLIP: TRIM -\(Int(trimDb))dB (14dB HEADROOM)? ▲YES ▼NO",
+                    applyAction: { [weak self] in
+                        guard let self = self else { return "" }
+                        // Clear hardware and software clip states
+                        ch.meterClip = false
+                        self.recordedClips[chId] = false
+                        if isPreamp {
+                            let targetGain = max(10.0, currentGain - trimDb)
+                            self.uad.setPreampGain(chId: chId, gainDb: targetGain)
+                            if let m = self.mcu {
+                                let slot = chId - m.bankOffset
+                                if slot >= 0 && slot < 8 {
+                                    m.sendMeterLevel(slot: slot, db: targetHeadroomPeak, isClip: false)
+                                }
+                            }
+                            return "Cleared clipping on \(chName) and trimmed preamp gain down by \(Int(trimDb)) d B to \(Int(targetGain)) d B."
+                        } else {
+                            let targetFaderDb = max(-144.0, ch.faderDb - trimDb)
+                            let tap = UADCurve.dbToTapered(targetFaderDb)
+                            self.uad.setFader(chId: chId, tapered: tap)
+                            if let m = self.mcu {
+                                let slot = chId - m.bankOffset
+                                if slot >= 0 && slot < 8 {
+                                    m.sendFaderPosition(slot: slot, normVal: tap)
+                                    m.sendMeterLevel(slot: slot, db: targetHeadroomPeak, isClip: false)
+                                }
+                            }
+                            return "Cleared clipping on \(chName) and trimmed fader down by \(Int(trimDb)) d B."
+                        }
+                    }
+                )
+                findings.append(suggestion)
+                continue
+            }
+
+            // Rule 1B: DANGEROUSLY HOT SIGNAL / INADEQUATE HEADROOM (Exceeds -3.0 dBFS with no clip yet)
+            if peak > -3.0 && !clipped && !ch.mute {
+                let currentGain = ch.preamp.gain
+                let isPreamp = ch.preamp.hasPreamp
+                let trimDb = max(3.0, round(peak - (-14.0)))
+                let currentHeadroom = max(0.0, -peak)
+                let suggestion = AISuggestion(
+                    id: "hot_\(chId)",
+                    channelId: chId,
+                    channelName: chName,
+                    issueTitle: "Hot Signal (Low Headroom)",
+                    voiceDescription: "Channel \(chId + 1), \(chName), is peaking hot at \(String(format: "%.1f", peak)) d B with only \(String(format: "%.1f", currentHeadroom)) d B of headroom. Best practice recommends 12 to 14 d B of headroom. Would you like me to trim gain down by \(Int(trimDb)) d B to reach the minus 14 d B sweet spot?",
+                    lcdBanner: "[CH \(chId + 1)] HOT (\(String(format: "%.1f", peak))dB): TRIM -\(Int(trimDb))dB? ▲YES ▼NO",
                     applyAction: { [weak self] in
                         guard let self = self else { return "" }
                         if isPreamp {
-                            let targetGain = max(10.0, currentGain - 4.0)
+                            let targetGain = max(10.0, currentGain - trimDb)
                             self.uad.setPreampGain(chId: chId, gainDb: targetGain)
-                            return "Trimmed \(chName) preamp gain down by 4 d B to \(Int(targetGain)) d B."
+                            return "Trimmed \(chName) preamp gain down by \(Int(trimDb)) d B for 14 d B clean headroom."
                         } else {
-                            let targetFaderDb = max(-144.0, ch.faderDb - 4.0)
+                            let targetFaderDb = max(-144.0, ch.faderDb - trimDb)
                             let tap = UADCurve.dbToTapered(targetFaderDb)
                             self.uad.setFader(chId: chId, tapered: tap)
-                            return "Trimmed \(chName) fader down by 4 d B."
+                            if let m = self.mcu {
+                                let slot = chId - m.bankOffset
+                                if slot >= 0 && slot < 8 {
+                                    m.sendFaderPosition(slot: slot, normVal: tap)
+                                }
+                            }
+                            return "Trimmed \(chName) fader down by \(Int(trimDb)) d B for 14 d B clean headroom."
                         }
                     }
                 )

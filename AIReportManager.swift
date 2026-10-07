@@ -83,7 +83,8 @@ public final class AIReportManager {
         report += "• Total Channels Monitored:   \(allChannels.count)\n"
         report += "• Active Channels Detected:   \(activeChannels.count) tracks (> -50.0 dBFS)\n"
         report += "• Maximum Session Peak:       \(String(format: "%.1f", maxPeak)) dBFS (\(maxPeakChannel))\n"
-        report += "• Master Headroom Margin:     \(String(format: "%.1f", max(0.0, -maxPeak))) dB\n\n"
+        report += "• Master Headroom Margin:     \(String(format: "%.1f", max(0.0, -maxPeak))) dB\n"
+        report += "• Headroom Best Practice:     -14.0 dBFS Peak (-12 to -18 dBFS nominal for 24-bit converters)\n\n"
 
         report += "--------------------------------------------------------------------------------\n"
         report += "2. AI CO-PRODUCER FINDINGS & RECOMMENDATIONS (\(suggestions.count) Items)\n"
@@ -105,8 +106,8 @@ public final class AIReportManager {
         report += "--------------------------------------------------------------------------------\n"
         report += AIReportManager.padRight("CH", 6) + " " +
                   AIReportManager.padRight("TRACK NAME", 16) + " " +
-                  AIReportManager.padRight("PEAK LEVEL", 12) + " " +
-                  AIReportManager.padRight("FADER dB", 12) + " " +
+                  AIReportManager.padRight("PEAK LEVEL", 14) + " " +
+                  AIReportManager.padRight("FADER dB", 10) + " " +
                   AIReportManager.padRight("MUTE/SOLO", 10) + " " +
                   AIReportManager.padRight("PREAMP/STATUS", 14) + "\n"
         report += "--------------------------------------------------------------------------------\n"
@@ -114,7 +115,17 @@ public final class AIReportManager {
         for ch in allChannels {
             let pk = peaks[ch.id] ?? ch.meterPeak
             let clip = (clips[ch.id] == true) || ch.meterClip
-            let pkStr = String(format: "%+5.1f dB", pk) + (clip ? " [CLIP]" : "")
+            let tag: String
+            if clip {
+                tag = " [CLIP]"
+            } else if pk > -3.0 && pk > -50.0 {
+                tag = " [HOT]"
+            } else if pk >= -18.0 && pk <= -12.0 {
+                tag = " [OK]"
+            } else {
+                tag = ""
+            }
+            let pkStr = String(format: "%+5.1f dB", pk) + tag
             let faderStr = (ch.faderDb <= -140.0) ? "-oo dB" : String(format: "%+5.1f dB", ch.faderDb)
             let muteSolo = ch.mute ? "MUTED" : (ch.solo ? "SOLO" : "--")
             var preStr = "--"
@@ -127,8 +138,8 @@ public final class AIReportManager {
             let chLabel = String(format: "Ch %02d", ch.id + 1)
             let row = AIReportManager.padRight(chLabel, 6) + " " +
                       AIReportManager.padRight(String(ch.name.prefix(16)), 16) + " " +
-                      AIReportManager.padRight(pkStr, 12) + " " +
-                      AIReportManager.padRight(faderStr, 12) + " " +
+                      AIReportManager.padRight(pkStr, 14) + " " +
+                      AIReportManager.padRight(faderStr, 10) + " " +
                       AIReportManager.padRight(muteSolo, 10) + " " +
                       AIReportManager.padRight(preStr, 14) + "\n"
             report += row
