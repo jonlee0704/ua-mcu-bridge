@@ -144,6 +144,9 @@ public final class AIReportManager {
             activeReportURL = fileURL
             bridgeLog("[AI Report] Diagnostic report saved to: \(fileURL.lastPathComponent)")
             pruneOldReports()
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: Notification.Name("AIReportsDidChange"), object: nil)
+            }
             return fileURL
         } catch {
             bridgeLog("[AI Report] Failed to write report: \(error.localizedDescription)")
@@ -167,6 +170,9 @@ public final class AIReportManager {
             }
         }
         try? newContent.write(to: url, atomically: true, encoding: .utf8)
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: Notification.Name("AIReportsDidChange"), object: nil)
+        }
     }
 
     /// Prunes reports so that only the latest 10 files are kept.
@@ -295,6 +301,13 @@ final class AIReportsWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
         setupUI()
+        NotificationCenter.default.addObserver(self, selector: #selector(handleReportsChangedNotification), name: Notification.Name("AIReportsDidChange"), object: nil)
+    }
+
+    @objc private func handleReportsChangedNotification() {
+        DispatchQueue.main.async { [weak self] in
+            self?.reloadReportList()
+        }
     }
 
     required init?(coder: NSCoder) {

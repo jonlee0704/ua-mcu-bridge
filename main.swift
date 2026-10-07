@@ -134,7 +134,7 @@ public func bridgeLog(_ message: String) {
 
 // MARK: - Application Delegate
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var menu: NSMenu!
 
@@ -278,8 +278,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu = NSMenu()
+        menu.delegate = self
         buildMenu()
         statusItem.menu = menu
+
+        NotificationCenter.default.addObserver(self, selector: #selector(handleReportsChangedNotification), name: Notification.Name("AIReportsDidChange"), object: nil)
     }
 
     private func buildMenu() {
@@ -612,6 +615,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func handleQuit(_ sender: NSMenuItem) {
         cleanupHardware()
         NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: - NSMenuDelegate
+
+    func menuWillOpen(_ menu: NSMenu) {
+        buildMenu()
+    }
+
+    @objc private func handleReportsChangedNotification() {
+        DispatchQueue.main.async { [weak self] in
+            self?.buildMenu()
+        }
     }
 }
 
