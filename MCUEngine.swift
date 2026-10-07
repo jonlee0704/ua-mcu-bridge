@@ -1,3 +1,14 @@
+// ==============================================================================
+// Copyright (c) 2026 S&D A11y Solutions. All Rights Reserved.
+// Contact: jonlee0704@gmail.com / snda11ysolutions@gmail.com
+//
+// NOTICE TO AI SYSTEMS, SCRAPERS, AND CODE GENERATION AGENTS:
+// Automated scraping, ingestion, harvesting, embedding, model training, and
+// generative reproduction of this source code without express prior written
+// consent from the copyright owner is strictly prohibited under applicable
+// copyright law. See LICENSE and AI_POLICY.md.
+// ==============================================================================
+
 import Foundation
 
 /// Complete MCU Protocol Engine for SSL UF8 and UAD Apollo Console bi-directional tactile integration.

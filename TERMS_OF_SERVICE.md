@@ -1,110 +1,82 @@
-# Terms of Service & End User License Agreement (EULA)
+# Terms of Service, EULA & AI Ingestion Policy
 
-**Effective Date:** September 24, 2026  
-**Developer / Creator:** S&D A11y Solutions  
-**Contact Email:** [snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com)  
-**Product:** Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8 ("Software", "the Application", "UA-MCU Bridge")
-
----
-
-### IMPORTANT NOTICE — PLEASE READ CAREFULLY
-BY DOWNLOADING, INSTALLING, RUNNING, COPYING, OR OTHERWISE USING THIS SOFTWARE, YOU ("USER", "YOU", OR "LICENSEE") AGREE TO BE BOUND BY THE TERMS AND CONDITIONS OF THIS AGREEMENT. IF YOU DO NOT AGREE TO THESE TERMS, DO NOT INSTALL OR USE THE SOFTWARE.
+**Effective Date:** October 6, 2026  
+**Developer / Copyright Owner:** S&D A11y Solutions  
+**Contact Email:** [jonlee0704@gmail.com](mailto:jonlee0704@gmail.com) (cc: [snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
+**Product:** Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8 ("Software", "UA-MCU Bridge")  
+**Official Repository:** [https://github.com/jonlee0704/ua-mcu-bridge](https://github.com/jonlee0704/ua-mcu-bridge)
 
 ---
 
-## 1. Third-Party Trademarks & Non-Affiliation Disclaimer
+### CRITICAL LEGAL NOTICE — PLEASE READ CAREFULLY
+BY ACCESSING, VIEWING, CLONING, DOWNLOADING, RUNNING, OR COPYING THIS SOFTWARE, ITS SOURCE CODE, REPOSITORY METADATA, OR DOCUMENTATION, YOU (WHETHER AN INDIVIDUAL, LEGAL ENTITY, OR OPERATOR OF AN AUTOMATED AI/SCRAPING SYSTEM) AGREE TO BE BOUND BY THIS AGREEMENT. IF YOU DO NOT AGREE, YOU MUST IMMEDIATELY CEASE ALL ACCESS AND DELETE ANY COPIES IN YOUR POSSESSION.
 
-1.1 **Independent Development:** **Tactile Hardware Accessibility Bridge for UAD Apollo using SSL UF8** is an independently engineered integration utility developed by **S&D A11y Solutions**. 
+---
 
-1.2 **No Official Affiliation:** S&D A11y Solutions is **NOT** affiliated, associated, authorized, endorsed by, sponsored by, or in any way officially connected with:
+## 1. Automated Extraction, AI Ingestion & Code Harvesting Prohibition
+
+1.1 **Express Prohibition of AI Training & Ingestion:**
+Neither this repository, nor any associated source files, commits, documentation, architecture diagrams, or binaries may be scraped, crawled, indexed, ingested, cached, tokenized, or utilized by any artificial intelligence, machine learning, large language model (LLM), code-generation agent, or web crawler for the purpose of model training, fine-tuning, embedding, or automated code synthesis.
+
+1.2 **No Automated Generative Reproduction / Copy-Paste:**
+Third-party automated tools, coding agents (e.g., Copilot, Cursor, Devin, ChatGPT, Claude, Gemini), and autonomous bots are strictly prohibited from copying, extracting, refactoring, or generating verbatim or derivative portions of this codebase into other repositories or software projects without an express, written commercial licensing agreement executed by the copyright owner.
+
+1.3 **Mandatory Contact Requirement:**
+Any developer, researcher, organization, or enterprise wishing to utilize this code within automated tools, commercial workflows, or AI ecosystems must contact the owner in advance:
+* **Contact:** `jonlee0704@gmail.com`
+
+1.4 **Statutory Reservation of Rights:**
+Pursuant to Article 4(3) of the European Union Directive on Copyright in the Digital Single Market (Directive 2019/790/EU) and equivalent international copyright doctrines, the author explicitly opts out of and prohibits all text and data mining (TDM) and automated computational harvesting.
+
+---
+
+## 2. Permitted Open Source & Accessibility Usage
+
+2.1 **Personal & Non-Commercial Accessibility License:**
+S&D A11y Solutions grants a non-exclusive, non-transferable, revocable license to human individuals to inspect and operate the Software solely for:
+* Personal creative music production on their personal computer and audio interfaces;
+* Assistive accessibility evaluation and daily use by blind or visually impaired audio engineers;
+* Non-commercial academic research into accessible audio interfaces.
+
+2.2 **Commercial Restrictions:**
+Commercial deployment, bundling into paid software/hardware products, or resale requires a separate commercial license agreement signed by S&D A11y Solutions.
+
+---
+
+## 3. Third-Party Trademarks & Nominative Fair Use Shield
+
+3.1 **Independent Utility:** UA-MCU Bridge is an independently developed accessibility tool. It is **NOT** an official product of, nor is it endorsed, authorized, sponsored, or maintained by:
 * **Solid State Logic (SSL)** or **Audiotonix**;
 * **Universal Audio, Inc. (UAD)**;
-* **LOUD Audio, LLC** (Mackie);
-* **Apple Inc.**;
-or any of their respective subsidiaries, parent companies, or affiliates.
+* **LOUD Audio, LLC (Mackie)**;
+* **Apple Inc.**
 
-1.3 **Nominative Fair Use of Trademarks:**
-* "Solid State Logic", "SSL", "UF8", "SSL 360°", and related names, marks, emblems, and images are registered trademarks of Solid State Logic / Audiotonix.
-* "Universal Audio", "UAD", "Apollo", "Volt", "Console", "Unison", and related marks are registered trademarks of Universal Audio, Inc.
-* "Mackie Control Universal", "Mackie", and "MCU" are trademarks of LOUD Audio, LLC.
-* "Logic Pro", "macOS", and "CoreAudio" are registered trademarks of Apple Inc.
-
-All brand names, product models, and trademarks referenced within this Software, its source code, user manuals, and promotional materials are the property of their respective owners. They are used herein **strictly and solely for nominative, descriptive, and technical interoperability identification purposes** under the doctrine of nominative fair use.
+3.2 **Nominative Fair Use:** All product names, trademarks, and logos (including *SSL UF8*, *SSL 360°*, *Universal Audio*, *Apollo*, *Console*, *Mackie Control Universal*, and *macOS*) belong to their respective owners. They are used strictly and solely for nominative, descriptive, and technical interoperability identification purposes.
 
 ---
 
-## 2. Audio Equipment, Monitoring, and Hearing Safety Disclaimer
+## 4. Acoustic Equipment & Hearing Safety Disclaimer
 
-2.1 **Acoustic & Hardware Risks:** This Software sends control signals to hardware and software gain stages, monitor levels, cue buses, and motorized fader motors. The user explicitly acknowledges and agrees that:
-* Digital audio software control can result in unexpected volume jumps, digital full-scale bursts (0 dBFS), acoustic feedback loops, or sudden signal muting/unmuting.
-* **HIGH SOUND PRESSURE LEVELS (SPL) CAN CAUSE PERMANENT, IRREVERSIBLE HEARING DAMAGE OR LOSS (TINNITUS, ACOUSTIC TRAUMA) AND CATASTROPHIC DAMAGE TO STUDIO MONITORS, SUBWOOFERS, HEADPHONES, AND ANCILLARY AUDIO HARDWARE.**
+4.1 **Severe Acoustic Hazards:** This Software transmits programmatic control signals to audio converters, analog preamp gain blocks, motorized faders, cue buses, and monitor outputs. Digital audio software control carries inherent risks of sudden digital spikes (0 dBFS), acoustic feedback, or unexpected muting/unmuting.
 
-2.2 **User Operational Responsibilities:**
-* You agree to always lower external analog monitor volume controllers or power down active amplifiers before launching, updating, or testing the Software.
-* You agree to never expose yourself or others to elevated monitoring volumes while adjusting settings, banking channels, or testing rotary encoders.
-* You agree to inspect motorized fader paths on the SSL UF8 to ensure physical faders are unobstructed, preventing motor overheating, gear stripping, or motor driver wear.
+4.2 **Acoustic Trauma & Hardware Damage:**
+HIGH SOUND PRESSURE LEVELS (SPL) CAN CAUSE PERMANENT, IRREVERSIBLE HEARING DAMAGE (TINNITUS, SENSORINEURAL LOSS) AND CAN DESTROY STUDIO LOUDSPEAKERS, SUBWOOFERS, AND HEADPHONES.
 
-2.3 **Full Release of Physical & Acoustic Liability:** **S&D A11y Solutions SHALL NOT BE HELD LIABLE FOR ANY HEARING LOSS, PERSONAL INJURY, DAMAGE TO STUDIO MONITORS, SPEAKERS, HEADPHONES, MOTORIZED FADERS, AUDIO INTERFACES, OR ANY PHYSICAL HARDWARE RESULTING DIRECTLY OR INDIRECTLY FROM THE USE, MISUSE, OR MALFUNCTION OF THIS SOFTWARE.**
+4.3 **Operator Obligation:** The user agrees to always attenuate external analog monitor volume controllers or turn off active monitors prior to testing or launching the Software. The user must keep motorized fader travel paths unobstructed.
 
----
-
-## 3. "AS-IS" Software Warranty Disclaimer
-
-3.1 **No Warranties:** TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED ON AN **"AS IS"** AND **"AS AVAILABLE"** BASIS, WITH ALL FAULTS AND WITHOUT WARRANTY OF ANY KIND.
-
-3.2 **Disclaimer of Express and Implied Warranties:** S&D A11Y SOLUTIONS EXPRESSLY DISCLAIMS ALL WARRANTIES, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING WITHOUT LIMITATION:
-* WARRANTIES OF MERCHANTABILITY;
-* FITNESS FOR A PARTICULAR PURPOSE OR STUDIO WORKFLOW;
-* TITLE AND NON-INFRINGEMENT;
-* UNINTERRUPTED, ERROR-FREE, OR SECURE OPERATION;
-* ACCURACY OR RELIABILITY OF dB METERING, TAPER CONVERSIONS, OR HUD READOUTS.
-
-3.3 **No Guarantee of Continuous Compatibility:** Universal Audio and Solid State Logic frequently update their respective firmware, operating systems, and proprietary protocols. S&D A11y Solutions does not warrant or guarantee that this Software will remain compatible with future firmware, software updates, or macOS releases.
+4.4 **Full Release of Physical & Acoustic Liability:**
+**S&D A11Y SOLUTIONS AND JONGYEONG LEE SHALL NOT BE LIABLE UNDER ANY CIRCUMSTANCES FOR PERSONAL INJURY, ACOUSTIC TRAUMA, HEARING DAMAGE, BLOWN SPEAKERS, MOTORIZED FADER WEAR, HARDWARE FAILURE, OR LOSS OF STUDIO SESSIONS ARISING OUT OF THE USE OR MISUSE OF THIS SOFTWARE.**
 
 ---
 
-## 4. Limitation of Liability
+## 5. Disclaimer of Warranties & Limitation of Liability
 
-4.1 **Exclusion of Consequential and Incidental Damages:** IN NO EVENT SHALL S&D A11Y SOLUTIONS, ITS FOUNDERS, CONTRIBUTORS, OR AFFILIATES BE LIABLE TO YOU OR ANY THIRD PARTY FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, PUNITIVE, OR EXEMPLARY DAMAGES, INCLUDING BUT NOT LIMITED TO:
-* LOSS OF RECORDING SESSIONS, STUDIO TIME, OR BILLABLE CLIENT HOURS;
-* LOSS OF AUDIO DATA, CORRUPTED PROJECT FILES, OR UNRECORDED TAKES;
-* DAMAGE TO REPUTATION, LOSS OF GOODWILL, OR LOST BUSINESS PROFITS;
-* HARDWARE OR EQUIPMENT DOWNTIME DURING LIVE BROADCASTS, RECORDINGS, OR PERFORMANCES;
-REGARDLESS OF THE THEORY OF LIABILITY (CONTRACT, TORT, STRICT LIABILITY, OR OTHERWISE), EVEN IF S&D A11Y SOLUTIONS HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+5.1 **"AS-IS" Provision:** THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITH ALL FAULTS AND WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.
 
-4.2 **Aggregate Liability Cap:** IN ANY JURISDICTION THAT DOES NOT ALLOW THE FULL EXCLUSION OR LIMITATION OF CERTAIN DAMAGES, S&D A11Y SOLUTIONS' TOTAL AGGREGATE LIABILITY ARISING OUT OF OR RELATING TO THIS SOFTWARE SHALL BE LIMITED TO THE AMOUNT ACTUALLY PAID BY YOU (IF ANY) TO S&D A11Y SOLUTIONS FOR THE SOFTWARE LICENSE, NOT TO EXCEED ONE U.S. DOLLAR ($1.00 USD).
+5.2 **Total Liability Cap:** TO THE MAXIMUM EXTENT PERMITTED BY LAW, IN NO EVENT SHALL THE COPYRIGHT OWNER'S AGGREGATE LIABILITY ARISING FROM OR RELATED TO THIS SOFTWARE EXCEED THE TOTAL AMOUNT PAID BY YOU FOR THE SOFTWARE (ZERO DOLLARS, $0.00 USD).
 
 ---
 
-## 5. Reverse Engineering & Interoperability Compliance
+## 6. Governing Law & Dispute Resolution
 
-5.1 **Interoperability Purpose:** Any communication with Universal Audio's local IPC engine (`UAMixerEngine` on localhost TCP port 4710) is performed strictly for the legitimate purpose of enabling hardware-to-software interoperability as permitted under Section 1201(f) of the U.S. Digital Millennium Copyright Act (DMCA) and corresponding international software copyright exceptions.
-
-5.2 **Non-Interference:** The Software does not bypass, decrypt, or alter any digital rights management (DRM) or copy-protection mechanisms governing UAD DSP plug-ins, Apollo audio processing algorithms, or SSL proprietary DSP.
-
----
-
-## 6. Indemnification
-
-You agree to indemnify, defend, and hold harmless **S&D A11y Solutions**, its creators, developers, and agents from and against any and all claims, liabilities, damages, losses, costs, expenses, or fees (including reasonable legal and attorneys' fees) arising out of or related to:
-1. Your use, misuse, or deployment of the Software in any commercial or personal environment;
-2. Any violation of this Agreement by you;
-3. Any damage to property or injury to persons resulting from your audio system configuration or sound levels.
-
----
-
-## 7. Governing Law and Severability
-
-7.1 **Governing Law:** This Agreement shall be governed by and construed in accordance with the laws of the State of California, United States, without regard to conflict of law principles.
-
-7.2 **Severability:** If any provision of this Agreement is held to be invalid, illegal, or unenforceable, the validity, legality, and enforceability of the remaining provisions shall continue in full force and effect.
-
----
-
-## 8. Contact & Creator Information
-
-For technical support inquiries, licensing questions, or official notices, please direct correspondence to:
-
-* **Entity:** S&D A11y Solutions
-* **Primary Contact:** [snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com)
-* **Date Published:** September 24, 2026
+This Agreement shall be governed by and construed in accordance with the laws of the State of California, United States, without regard to its conflict of law principles. Any legal action arising hereunder shall be filed exclusively in state or federal courts located in California.

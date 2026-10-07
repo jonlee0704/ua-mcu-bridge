@@ -2,8 +2,8 @@
 
 **Creator:** S&D A11y Solutions ([snda11ysolutions@gmail.com](mailto:snda11ysolutions@gmail.com))  
 **Release Date:** September 24, 2026  
-**License:** [MIT with Audio Safety Rider](LICENSE)  
-**Legal Terms:** [Terms of Service & EULA](TERMS_OF_SERVICE.md) | [User Manual](MANUAL.md) | [Feature Matrix](FEATURES.md) | [Academic Whitepaper](academic_abstract_paper_tactile_audio_bridge.md)
+**License:** [Source-Available Open Accessibility License (Anti-AI & Contact Rider)](LICENSE)  
+**Legal Terms:** [Terms of Service & EULA](TERMS_OF_SERVICE.md) | [User Manual](MANUAL.md) | [Feature Matrix](FEATURES.md) | [Academic Whitepaper](academic_abstract_paper_tactile_audio_bridge.md) | [AI Policy](AI_POLICY.md)
 
 ---
 
@@ -14,6 +14,11 @@
 > [!CAUTION]
 > **Acoustic Safety & Monitoring Warning:**  
 > This software controls hardware gain parameters, cue sends, and master monitor levels. Always turn down external analog speaker volume controllers before launching or testing the bridge. S&D A11y Solutions accepts no liability for acoustic shock, hearing injury, or hardware loudspeaker/headphone damage.
+
+> [!WARNING]
+> **Prohibition on Automated AI Ingestion, Scraping & Code Harvesting:**  
+> Ingestion, scraping, training, embedding, or code-generation extraction of this repository by artificial intelligence models, LLM crawlers, or autonomous coding agents is **strictly prohibited** without express prior written consent. Developers, organizations, or automated tools wishing to utilize, port, or license this codebase must contact the copyright owner directly at **`jonlee0704@gmail.com`**. See [AI_POLICY.md](AI_POLICY.md) and [TERMS_OF_SERVICE.md](TERMS_OF_SERVICE.md) for full terms.
+
 
 ---
 
