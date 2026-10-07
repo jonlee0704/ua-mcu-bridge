@@ -1585,12 +1585,41 @@ public final class MCUEngine {
     }
 
     public func toggleMonitorMute() {
-        let newMute = uad.toggleMonitorMute()
-        let hudText = newMute ? ">>> MONITOR: MUTED <<<" : String(format: ">>> MONITOR: %+.1f dB <<<", uad.monitorLevelDb)
-        showTempHUD(text: hudText, duration: 1.5)
-        let spkStr = newMute ? "Muted" : "Unmuted, \(UADCurve.formatDbSpeech(uad.monitorLevelDb))"
-        voice.speak(spkStr)
-        bridgeLog("[MCU] Channel Wheel Press -> Monitor \(newMute ? "MUTED" : "UNMUTED") (\(String(format: "%.1f", uad.monitorLevelDb)) dB)")
+        if uad.monitorMute {
+            // UNMUTE: Restore Apollo hardware sound immediately (0ms delay)
+            uad.setMonitorMute(mute: false)
+            let hudText = String(format: ">>> MONITOR: %+.1f dB <<<", uad.monitorLevelDb)
+            showTempHUD(text: hudText, duration: 1.5)
+            let spkStr = "Unmuted, \(UADCurve.formatDbSpeech(uad.monitorLevelDb))"
+            voice.speak(spkStr)
+            bridgeLog("[MCU] Channel Wheel Press -> Monitor UNMUTED (\(String(format: "%.1f", uad.monitorLevelDb)) dB)")
+        } else {
+            // MUTE:
+            // 1. Instantly display MUTED HUD on hardware scribble strips (0ms visual feedback)
+            showTempHUD(text: ">>> MONITOR: MUTED <<<", duration: 1.5)
+            bridgeLog("[MCU] Channel Wheel Press -> Initiating Monitor MUTE (speaking 'Muted' before hardware cut)...")
+
+            // 2. Speak "Muted" FIRST through Apollo monitors/headphones
+            // 3. Hardware mute executes the moment speech finishes (or via 0.45s safety timer)
+            var didMuteHardware = false
+            let muteHardwareAction = { [weak self] in
+                guard let self = self, !didMuteHardware else { return }
+                didMuteHardware = true
+                self.uad.setMonitorMute(mute: true)
+                bridgeLog("[MCU] Channel Wheel Press -> Monitor MUTED (\(String(format: "%.1f", self.uad.monitorLevelDb)) dB)")
+            }
+
+            // Safety fallback timer: guarantee hardware is muted within 450ms even if speech engine stalls
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                muteHardwareAction()
+            }
+
+            voice.speak("Muted", interrupt: true) {
+                DispatchQueue.main.async {
+                    muteHardwareAction()
+                }
+            }
+        }
     }
 
     private func handleChannelWheelRotation(delta: Int) {

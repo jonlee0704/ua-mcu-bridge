@@ -26,6 +26,8 @@ public final class VoiceAnnouncer: NSObject, AVSpeechSynthesizerDelegate, @unche
     // Speech rate corresponding to ~210 words per minute (AVSpeechUtterance rate 0.0 to 1.0)
     public var speechRate: Float = 0.52
 
+    private var currentCompletion: (@Sendable () -> Void)?
+
     override public init() {
         super.init()
         synthesizer.delegate = self
@@ -75,21 +77,35 @@ public final class VoiceAnnouncer: NSObject, AVSpeechSynthesizerDelegate, @unche
         return components.joined(separator: " ")
     }
 
-    /// Speak text immediately with optional interruption of previous speech.
-    public func speak(_ text: String, interrupt: Bool = true) {
-        guard isEnabled, volume > 0.001, !text.isEmpty else { return }
+    /// Speak text immediately with optional interruption of previous speech and optional completion callback.
+    public func speak(_ text: String, interrupt: Bool = true, completion: (@Sendable () -> Void)? = nil) {
+        guard isEnabled, volume > 0.001, !text.isEmpty else {
+            completion?()
+            return
+        }
 
         let cleanText = sanitizeForSpeech(text)
-        guard !cleanText.isEmpty else { return }
+        guard !cleanText.isEmpty else {
+            completion?()
+            return
+        }
 
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
+            guard let self = self else {
+                completion?()
+                return
+            }
 
             self.cancelDebounceTimer()
 
             if interrupt && self.synthesizer.isSpeaking {
+                let prev = self.currentCompletion
+                self.currentCompletion = nil
+                prev?()
                 self.synthesizer.stopSpeaking(at: .immediate)
             }
+
+            self.currentCompletion = completion
 
             let utterance = AVSpeechUtterance(string: cleanText)
             utterance.rate = self.speechRate
@@ -122,6 +138,24 @@ public final class VoiceAnnouncer: NSObject, AVSpeechSynthesizerDelegate, @unche
         if let timer = debounceTimer {
             timer.cancel()
             debounceTimer = nil
+        }
+    }
+
+    // MARK: - AVSpeechSynthesizerDelegate
+
+    public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async { [weak self] in
+            let handler = self?.currentCompletion
+            self?.currentCompletion = nil
+            handler?()
+        }
+    }
+
+    public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        DispatchQueue.main.async { [weak self] in
+            let handler = self?.currentCompletion
+            self?.currentCompletion = nil
+            handler?()
         }
     }
 }
