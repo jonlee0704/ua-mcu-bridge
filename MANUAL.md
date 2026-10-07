@@ -361,13 +361,18 @@ Triggered via the **`FINE` key (`Note 83` / `0x53`)**, the AI Studio Co-Producer
                      └───────────────┘
 ```
 
-#### How to Use:
-1. **Start Inspection:** Press the physical **`FINE`** button on your UF8.
+#### How to Use (Two-Step Arm & Listen Workflow):
+1. **Step 1: Arm Session (1st Press of `FINE`):**
+   * Press the physical **`FINE`** button on your UF8.
    * **Tally Feedback:** The **FINE** button tally LED illuminates on the hardware.
+   * **HUD Banner:** Scribble strips display `>>> GEMINI AI [ALPHA]: PRESS FINE TO LISTEN <<<`.
+   * **Voice Guidance:** Conversational speech announces: *"AI Alpha inspector. Start playing audio, then press Fine to begin listening, or Flip to exit."*
+   * *The system waits in an armed state without timing out, allowing you time to cue up your DAW playback or pick up your instrument.*
+2. **Step 2: Start Listening (2nd Press of `FINE` or `UP ARROW` ▲):**
+   * With audio actively playing, press **`FINE`** a second time (or press **`UP ARROW`** ▲).
    * **HUD Banner:** Scribble strips display `>>> GEMINI AI [ALPHA]: LISTENING 32 CHS (3s) <<<`.
-   * **Greeting:** Conversational speech announces: *"Hey! Play some audio, and I'll check your gain staging, signal flow, and headroom."*
-2. **Play Audio (3.5-Second Listening Window):**
-   * Play your instruments or hit play on your session. The bridge records peak dBFS levels and converter clipping flags across all 32 hardware channels simultaneously.
+   * **Voice Guidance:** *"Listening across 32 channels..."*
+   * **3.5-Second Listening Window:** The bridge accumulates peak dBFS levels and converter clipping flags across all 32 hardware channels simultaneously before running heuristics.
 3. **Line-by-Line Consultation (4-Way Arrow Cluster):**
    * **`RIGHT ARROW` (►):** Advance to next suggestion.
    * **`LEFT ARROW` (◄):** Repeat current suggestion or go back to previous finding.

@@ -39,6 +39,7 @@ public struct AISuggestion {
 public final class AIAudioAuditor {
     public enum State {
         case idle
+        case armed
         case listening
         case analyzing
         case consulting
@@ -67,22 +68,58 @@ public final class AIAudioAuditor {
 
     // MARK: - Session Lifecycle
 
-    /// Starts or restarts the AI Studio session.
-    public func startSession() {
+    /// Main entry point when user presses the FINE button (Note 83 / Note 70).
+    public func handleFineButton() {
+        switch state {
+        case .idle:
+            armSession()
+        case .armed:
+            startListening()
+        case .listening, .analyzing:
+            break
+        case .consulting, .completed:
+            exitSession()
+        }
+    }
+
+    /// First press of FINE: arms the session, welcomes user, and waits for audio to start.
+    public func armSession() {
         lock.lock()
+        listenTimer?.cancel()
+        listenTimer = nil
         isActive = true
-        state = .listening
+        state = .armed
         suggestions.removeAll()
         recordedPeaks.removeAll()
         recordedClips.removeAll()
         currentIndex = 0
         lock.unlock()
 
-        bridgeLog("[AI Auditor] Starting listening session across 32 channels...")
+        bridgeLog("[AI Auditor] Session armed. Waiting for user to play audio and press FINE again...")
         mcu?.sendMIDI([0x90, 83, 0x7F]) // Illuminate FINE key (Note 83)
         mcu?.sendMIDI([0x90, 70, 0x7F])
+        mcu?.showTempHUD(text: ">>> GEMINI AI [ALPHA]: PRESS FINE TO LISTEN <<<", duration: 4.0)
+        voice.speak("AI Alpha inspector. Start playing audio, then press Fine to begin listening, or Flip to exit.")
+    }
+
+    /// Second press of FINE (or armed trigger): begins the 3.5s listening accumulation window.
+    public func startListening() {
+        lock.lock()
+        guard isActive else {
+            lock.unlock()
+            armSession()
+            return
+        }
+        state = .listening
+        recordedPeaks.removeAll()
+        recordedClips.removeAll()
+        lock.unlock()
+
+        bridgeLog("[AI Auditor] Starting listening session across 32 channels...")
+        mcu?.sendMIDI([0x90, 83, 0x7F])
+        mcu?.sendMIDI([0x90, 70, 0x7F])
         mcu?.showTempHUD(text: ">>> GEMINI AI [ALPHA]: LISTENING 32 CHS (3s) <<<", duration: 3.5)
-        voice.speak("AI Alpha inspector. Play some audio, and I'll check your gain staging, signal flow, and headroom.")
+        voice.speak("Listening across 32 channels...")
 
         // Start 3.5-second listening accumulation window
         listenTimer?.cancel()
@@ -93,6 +130,11 @@ public final class AIAudioAuditor {
         }
         listenTimer = timer
         timer.resume()
+    }
+
+    /// Starts or restarts the AI Studio session.
+    public func startSession() {
+        armSession()
     }
 
     /// Exits the AI session cleanly and returns surface to Main Mix.
@@ -302,8 +344,12 @@ public final class AIAudioAuditor {
 
     /// User pressed UP ARROW (Note 96): YES / Apply Fix.
     public func handleUpArrow() {
+        if state == .armed {
+            startListening()
+            return
+        }
         if state == .completed {
-            startSession()
+            armSession()
             return
         }
         guard state == .consulting, currentIndex >= 0, currentIndex < suggestions.count else { return }
@@ -344,7 +390,7 @@ public final class AIAudioAuditor {
 
     /// User pressed DOWN ARROW (Note 97): NO / Skip.
     public func handleDownArrow() {
-        if state == .completed {
+        if state == .armed || state == .completed {
             exitSession()
             return
         }

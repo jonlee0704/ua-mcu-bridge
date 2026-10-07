@@ -891,11 +891,7 @@ public final class MCUEngine {
 
         // FINE Button (Notes 83 & 70) -> AI Studio Co-Producer
         if note == 83 || note == 70 {
-            if auditor.isActive {
-                auditor.exitSession()
-            } else {
-                auditor.startSession()
-            }
+            auditor.handleFineButton()
             return
         }
 
