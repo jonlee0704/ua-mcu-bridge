@@ -39,7 +39,6 @@ public struct AISuggestion {
 public final class AIAudioAuditor {
     public enum State {
         case idle
-        case armed
         case listening
         case analyzing
         case consulting
@@ -55,7 +54,7 @@ public final class AIAudioAuditor {
     public private(set) var suggestions: [AISuggestion] = []
     public private(set) var currentIndex: Int = 0
 
-    // Telemetry recorded during the 3.5s listening window
+    // Telemetry recorded during the listening window
     private var recordedPeaks: [Int: Double] = [:]
     private var recordedClips: [Int: Bool] = [:]
     private var listenTimer: DispatchSourceTimer?
@@ -69,75 +68,64 @@ public final class AIAudioAuditor {
     // MARK: - Session Lifecycle
 
     /// Main entry point when user presses the FINE button (Note 83 / Note 70).
+    /// The cycle of FINE(AI) button is:
+    /// 1) Start AI listening -> 2) Stop listening -> 3) Exit AI mode.
     public func handleFineButton() {
         switch state {
         case .idle:
-            armSession()
-        case .armed:
+            // 1) Start AI listening
             startListening()
-        case .listening, .analyzing:
+        case .listening:
+            // 2) Stop listening
+            stopListening()
+        case .analyzing:
             break
         case .consulting, .completed:
+            // 3) Exit AI mode
             exitSession()
         }
     }
 
-    /// First press of FINE: arms the session, welcomes user, and waits for audio to start.
-    public func armSession() {
+    /// 1) Start AI listening: begins continuous listening across 32 channels until user stops.
+    public func startListening() {
         lock.lock()
         listenTimer?.cancel()
         listenTimer = nil
         isActive = true
-        state = .armed
+        state = .listening
         suggestions.removeAll()
         recordedPeaks.removeAll()
         recordedClips.removeAll()
         currentIndex = 0
         lock.unlock()
 
-        bridgeLog("[AI Auditor] Session armed. Waiting for user to play audio and press FINE again...")
+        bridgeLog("[AI Auditor] Started AI listening across 32 channels. Waiting for user to press FINE to stop...")
         mcu?.sendMIDI([0x90, 83, 0x7F]) // Illuminate FINE key (Note 83)
         mcu?.sendMIDI([0x90, 70, 0x7F])
-        mcu?.showTempHUD(text: ">>> GEMINI AI [ALPHA]: PRESS FINE TO LISTEN <<<", duration: 4.0)
-        voice.speak("AI Alpha inspector. Start playing audio, then press Fine to begin listening, or Flip to exit.")
+        mcu?.showTempHUD(text: ">>> GEMINI AI [ALPHA]: LISTENING (PRESS FINE TO STOP) <<<", duration: 6.0)
+        voice.speak("AI Co-Producer listening across 32 channels. Play your mix, then press Fine to stop listening.")
     }
 
-    /// Second press of FINE (or armed trigger): begins the 3.5s listening accumulation window.
-    public func startListening() {
+    /// 2) Stop listening: halts accumulation, analyzes audio, generates report, and presents findings.
+    public func stopListening() {
+        guard state == .listening else { return }
         lock.lock()
-        guard isActive else {
-            lock.unlock()
-            armSession()
-            return
-        }
-        state = .listening
-        recordedPeaks.removeAll()
-        recordedClips.removeAll()
+        state = .analyzing
         lock.unlock()
 
-        bridgeLog("[AI Auditor] Starting listening session across 32 channels...")
-        mcu?.sendMIDI([0x90, 83, 0x7F])
-        mcu?.sendMIDI([0x90, 70, 0x7F])
-        mcu?.showTempHUD(text: ">>> GEMINI AI [ALPHA]: LISTENING 32 CHS (3s) <<<", duration: 3.5)
-        voice.speak("Listening across 32 channels...")
+        bridgeLog("[AI Auditor] Stopped listening. Analyzing recorded mixer telemetry...")
+        mcu?.showTempHUD(text: ">>> ANALYZING MIXER STATE & GAIN STAGING <<<", duration: 1.5)
+        voice.speak("Stopped listening. Analyzing mix...")
 
-        // Start 3.5-second listening accumulation window
-        listenTimer?.cancel()
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 3.5)
-        timer.setEventHandler { [weak self] in
-            self?.finishListeningAndAnalyze()
-        }
-        listenTimer = timer
-        timer.resume()
+        finishListeningAndAnalyze()
     }
 
-    /// Starts or restarts the AI Studio session.
+    /// Starts or restarts the AI Studio session directly in listening mode.
     public func startSession() {
-        armSession()
+        startListening()
     }
 
-    /// Exits the AI session cleanly and returns surface to Main Mix.
+    /// 3) Exit AI mode: exits the session cleanly and returns surface to Main Mix.
     public func exitSession() {
         lock.lock()
         listenTimer?.cancel()
@@ -149,7 +137,7 @@ public final class AIAudioAuditor {
         bridgeLog("[AI Auditor] Exited AI Studio session.")
         mcu?.sendMIDI([0x90, 83, 0x00]) // Turn off FINE key LED (Note 83)
         mcu?.sendMIDI([0x90, 70, 0x00])
-        mcu?.showTempHUD(text: ">>> EXITED AI STUDIO [ALPHA] <<<", duration: 1.2)
+        mcu?.showTempHUD(text: ">>> EXITED AI MODE [ALPHA] <<<", duration: 1.2)
         voice.speak("Exited AI Alpha session. Main mix.")
         mcu?.refreshMainMixSurface()
     }
@@ -465,16 +453,13 @@ public final class AIAudioAuditor {
 
         if findings.isEmpty {
             state = .completed
-            mcu?.showTempHUD(text: ">>> ALL CHANNELS NOMINAL — READY TO RECORD <<<", duration: 3.0)
-            voice.speak("All channels nominal! Gain staging is clean with healthy converter headroom across your session. You're ready to start recording.")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
-                self?.exitSession()
-            }
+            mcu?.showTempHUD(text: ">>> ALL CHANNELS NOMINAL (FINE: EXIT) <<<", duration: 4.0)
+            voice.speak("All channels nominal! Gain staging is clean with healthy converter headroom across your session. Press Fine to exit AI mode.")
         } else {
             state = .consulting
             let countStr = "\(findings.count) \(findings.count == 1 ? "recommendation" : "recommendations")"
-            mcu?.showTempHUD(text: ">>> FOUND \(findings.count) ISSUES: ◄/► BROWSE  ▲YES  ▼NO <<<", duration: 2.5)
-            voice.speak("I found \(countStr) for your session. Use Left and Right arrows to browse, Up arrow for Yes, Down arrow for No.")
+            mcu?.showTempHUD(text: ">>> FOUND \(findings.count) ISSUES: ◄/► BROWSE ▲YES ▼NO (FINE: EXIT) <<<", duration: 3.5)
+            voice.speak("I found \(countStr) for your session. Use Left and Right arrows to browse, Up arrow for Yes, Down arrow for No, or press Fine to exit AI mode.")
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) { [weak self] in
                 self?.speakCurrentSuggestion()
             }
@@ -506,8 +491,8 @@ public final class AIAudioAuditor {
             currentIndex += 1
             speakCurrentSuggestion()
         } else {
-            mcu?.showTempHUD(text: ">>> LAST SUGGESTION — ▲YES  ▼NO  ◄PREV <<<", duration: 1.5)
-            voice.speak("Last suggestion. Use Left arrow for previous, or press Fine key to finish.")
+            mcu?.showTempHUD(text: ">>> LAST SUGGESTION — ▲YES  ▼NO (FINE: EXIT) <<<", duration: 1.5)
+            voice.speak("Last suggestion. Use Left arrow for previous, or press Fine to exit AI mode.")
         }
     }
 
@@ -524,12 +509,8 @@ public final class AIAudioAuditor {
 
     /// User pressed UP ARROW (Note 96): YES / Apply Fix.
     public func handleUpArrow() {
-        if state == .armed {
-            startListening()
-            return
-        }
         if state == .completed {
-            armSession()
+            startListening()
             return
         }
         guard state == .consulting, currentIndex >= 0, currentIndex < suggestions.count else { return }
@@ -571,7 +552,7 @@ public final class AIAudioAuditor {
 
     /// User pressed DOWN ARROW (Note 97): NO / Skip.
     public func handleDownArrow() {
-        if state == .armed || state == .completed {
+        if state == .completed {
             exitSession()
             return
         }
@@ -594,7 +575,7 @@ public final class AIAudioAuditor {
 
     private func finishConsultation() {
         state = .completed
-        mcu?.showTempHUD(text: ">>> ALL SUGGESTIONS REVIEWED — READY! <<<", duration: 3.0)
-        voice.speak("All suggestions reviewed! Press Up arrow to re-test, or Fine key to start mixing.")
+        mcu?.showTempHUD(text: ">>> ALL SUGGESTIONS REVIEWED (FINE: EXIT) <<<", duration: 3.0)
+        voice.speak("All suggestions reviewed! Press Up arrow to re-test, or press Fine to exit AI mode.")
     }
 }

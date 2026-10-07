@@ -400,7 +400,7 @@ final class AIReportsWindowController: NSWindowController, NSWindowDelegate {
         let reports = manager.listReports()
         if reports.isEmpty {
             popUpButton.addItem(withTitle: "No reports generated yet")
-            textView.string = "No AI Co-Producer diagnostic reports found.\n\nTo generate an analysis report:\n1. Press the FINE button on your SSL UF8 controller to arm.\n2. Start audio playback in your DAW.\n3. Press FINE a second time (or UP arrow) to listen for 3.5 seconds across all 32 channels.\n4. A detailed report will automatically appear here!"
+            textView.string = "No AI Co-Producer diagnostic reports found.\n\nTo generate an analysis report:\n1. Press the FINE button on your SSL UF8 controller to start listening.\n2. Play your mix in your DAW.\n3. Press FINE a second time to stop listening and analyze.\n4. Press FINE a third time to exit AI mode."
             return
         }
 

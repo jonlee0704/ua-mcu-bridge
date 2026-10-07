@@ -361,19 +361,25 @@ Triggered via the **`FINE` key (`Note 83` / `0x53`)**, the AI Studio Co-Producer
                      └───────────────┘
 ```
 
-#### How to Use (Two-Step Arm & Listen Workflow):
-1. **Step 1: Arm Session (1st Press of `FINE`):**
+#### How to Use (3-Step FINE Key Cycle):
+1. **Step 1: Start AI Listening (1st Press of `FINE`):**
    * Press the physical **`FINE`** button on your UF8.
    * **Tally Feedback:** The **FINE** button tally LED illuminates on the hardware.
-   * **HUD Banner:** Scribble strips display `>>> GEMINI AI [ALPHA]: PRESS FINE TO LISTEN <<<`.
-   * **Voice Guidance:** Conversational speech announces: *"AI Alpha inspector. Start playing audio, then press Fine to begin listening, or Flip to exit."*
-   * *The system waits in an armed state without timing out, allowing you time to cue up your DAW playback or pick up your instrument.*
-2. **Step 2: Start Listening (2nd Press of `FINE` or `UP ARROW` ▲):**
-   * With audio actively playing, press **`FINE`** a second time (or press **`UP ARROW`** ▲).
-   * **HUD Banner:** Scribble strips display `>>> GEMINI AI [ALPHA]: LISTENING 32 CHS (3s) <<<`.
-   * **Voice Guidance:** *"Listening across 32 channels..."*
-   * **3.5-Second Listening Window:** The bridge accumulates peak dBFS levels and converter clipping flags across all 32 hardware channels simultaneously before running heuristics.
-3. **Line-by-Line Consultation (4-Way Arrow Cluster):**
+   * **HUD Banner:** Scribble strips display `>>> GEMINI AI [ALPHA]: LISTENING (PRESS FINE TO STOP) <<<`.
+   * **Voice Guidance:** Conversational speech announces: *"AI Co-Producer listening across 32 channels. Play your mix, then press Fine to stop listening."*
+   * *The bridge continuously listens and accumulates peak dBFS levels and converter clipping flags across all 32 hardware channels until you choose to stop.*
+2. **Step 2: Stop Listening & Analyze (2nd Press of `FINE`):**
+   * Press **`FINE`** a second time when you are ready to evaluate your session audio.
+   * **HUD Banner:** Scribble strips display `>>> ANALYZING MIXER STATE & GAIN STAGING <<<`.
+   * **Voice Guidance:** Spoken update confirms: *"Stopped listening. Analyzing mix..."* followed by the findings summary.
+   * **Analysis & Report Generation:** The bridge evaluates all 32 channels against gain staging, clipping, and masking heuristics, and saves a timestamped diagnostic report to disk.
+3. **Step 3: Exit AI Mode (3rd Press of `FINE` or `FLIP`):**
+   * Once you are finished reviewing suggestions, press **`FINE`** a third time (or press **`FLIP`**) to exit AI mode.
+   * **Tally Feedback:** The **FINE** button tally LED turns off.
+   * **HUD Banner:** Scribble strips display `>>> EXITED AI MODE [ALPHA] <<<`.
+   * **Voice Guidance:** *"Exited AI mode. Main mix."*
+   * **Surface Restore:** Motorized faders and scribble strips immediately return to your normal Main Mix.
+4. **Line-by-Line Consultation (4-Way Arrow Cluster):**
    * **`RIGHT ARROW` (►):** Advance to next suggestion.
    * **`LEFT ARROW` (◄):** Repeat current suggestion or go back to previous finding.
    * **`UP ARROW` (▲):** **YES / Apply Fix Directly to Apollo Hardware:**
@@ -383,14 +389,12 @@ Triggered via the **`FINE` key (`Note 83` / `0x53`)**, the AI Studio Co-Producer
      * **Clipping / Overload:** Automatically trims analog preamp gain (or channel fader) down by **4 dB** for clean converter headroom.
      * **Muted Audio:** Unmutes active tracks in Apollo Console.
      * **Low-Frequency Rumble / Mud:** Engages the Apollo **75 Hz Low-Cut filter** on vocal, speech, or acoustic tracks.
-     * **Session Complete:** When all items are reviewed, pressing **Up** re-runs the test to verify your fixes!
+     * **Re-Test (▲ on Completed):** When all items are reviewed, pressing **Up Arrow** ▲ immediately starts a new listening session to re-test your adjustments!
    * **`DOWN ARROW` (▼):** **NO / Skip:** Keeps your current setting and moves to the next finding.
-4. **Clean Session Status:**
-   * If all channels have healthy headroom and no issues are detected, Gemini announces: *"All channels nominal! Gain staging is clean with healthy converter headroom across your session. You're ready to start recording."* The session exits automatically back to Main Mix.
-5. **Hearing Protection Guarantee:**
+5. **Clean Session Status:**
+   * If all channels have healthy headroom and no issues are detected, Gemini announces: *"All channels nominal! Gain staging is clean with healthy converter headroom across your session. Press Fine to exit AI mode."*
+6. **Hearing Protection Guarantee:**
    * Pressing the **Center Circle Key (`Note 100`)** during an AI consultation **always toggles Master Monitor Mute/Unmute immediately**. Your ears and studio monitors are protected at all times.
-6. **Exiting AI Session:**
-   * Press **`FINE`** or **`FLIP`** at any time to immediately cancel the session, turn off the FINE LED, and restore the scribble strips back to your Main Mix.
 
 ---
 
