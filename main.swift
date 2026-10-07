@@ -404,7 +404,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        // 6. Maintenance & Diagnostics
+        // 6. AI Co-Producer Reports [ALPHA]
+        let aiReportParent = NSMenuItem(title: "AI Co-Producer Reports [ALPHA]", action: nil, keyEquivalent: "")
+        let aiReportMenu = NSMenu(title: "AI Co-Producer Reports")
+
+        let openReportsWindowItem = NSMenuItem(title: "Open AI Reports Window...", action: #selector(handleOpenAIReportsWindow(_:)), keyEquivalent: "")
+        openReportsWindowItem.target = self
+        aiReportMenu.addItem(openReportsWindowItem)
+
+        let saveLatestItem = NSMenuItem(title: "Save Latest Report Locally...", action: #selector(handleSaveLatestReport(_:)), keyEquivalent: "")
+        saveLatestItem.target = self
+        aiReportMenu.addItem(saveLatestItem)
+
+        let emailLatestItem = NSMenuItem(title: "Email Latest Report...", action: #selector(handleEmailLatestReport(_:)), keyEquivalent: "")
+        emailLatestItem.target = self
+        aiReportMenu.addItem(emailLatestItem)
+
+        aiReportMenu.addItem(NSMenuItem.separator())
+
+        // Submenu listing recent reports (up to 10)
+        let recentMenu = NSMenu(title: "Recent Reports")
+        let reports = AIReportManager.shared.listReports()
+        if reports.isEmpty {
+            let emptyItem = NSMenuItem(title: "No reports generated yet", action: nil, keyEquivalent: "")
+            emptyItem.isEnabled = false
+            recentMenu.addItem(emptyItem)
+        } else {
+            for (idx, rUrl) in reports.prefix(10).enumerated() {
+                let rItem = NSMenuItem(title: "[\(idx + 1)] \(rUrl.lastPathComponent)", action: #selector(handleOpenSpecificReport(_:)), keyEquivalent: "")
+                rItem.representedObject = rUrl
+                rItem.target = self
+                recentMenu.addItem(rItem)
+            }
+        }
+        let recentParent = NSMenuItem(title: "Recent Reports (\(reports.count) Saved)", action: nil, keyEquivalent: "")
+        recentParent.submenu = recentMenu
+        aiReportMenu.addItem(recentParent)
+
+        let revealFolderItem = NSMenuItem(title: "Reveal Reports Folder in Finder", action: #selector(handleRevealReportsFolder(_:)), keyEquivalent: "")
+        revealFolderItem.target = self
+        aiReportMenu.addItem(revealFolderItem)
+
+        aiReportParent.submenu = aiReportMenu
+        menu.addItem(aiReportParent)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // 7. Maintenance & Diagnostics
         let refreshItem = NSMenuItem(title: "Refresh Hardware Surface", action: #selector(handleRefreshSurface(_:)), keyEquivalent: "r")
         refreshItem.target = self
         menu.addItem(refreshItem)
@@ -423,7 +469,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        // 7. Quit
+        // 8. Quit
         let quitItem = NSMenuItem(title: "Quit UA-MCU Bridge", action: #selector(handleQuit(_:)), keyEquivalent: "q")
         quitItem.target = self
         menu.addItem(quitItem)
@@ -531,6 +577,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func handleOpenLogFile(_ sender: NSMenuItem) {
         AppLogger.shared.openLog()
+    }
+
+    // MARK: - AI Reports Action Handlers
+
+    @objc private func handleOpenAIReportsWindow(_ sender: NSMenuItem) {
+        AIReportManager.shared.showReportsWindow()
+    }
+
+    @objc private func handleSaveLatestReport(_ sender: NSMenuItem) {
+        if let latest = AIReportManager.shared.latestReport() {
+            AIReportManager.shared.saveReportLocally(url: latest)
+        } else {
+            AIReportManager.shared.showReportsWindow()
+        }
+    }
+
+    @objc private func handleEmailLatestReport(_ sender: NSMenuItem) {
+        if let latest = AIReportManager.shared.latestReport() {
+            AIReportManager.shared.emailReport(url: latest)
+        } else {
+            AIReportManager.shared.showReportsWindow()
+        }
+    }
+
+    @objc private func handleOpenSpecificReport(_ sender: NSMenuItem) {
+        AIReportManager.shared.showReportsWindow()
+    }
+
+    @objc private func handleRevealReportsFolder(_ sender: NSMenuItem) {
+        AIReportManager.shared.revealInFinder()
     }
 
     @objc private func handleQuit(_ sender: NSMenuItem) {

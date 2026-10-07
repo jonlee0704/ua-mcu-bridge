@@ -455,6 +455,14 @@ public final class AIAudioAuditor {
         currentIndex = 0
         lock.unlock()
 
+        // Generate and archive diagnostic report (keeps latest 10)
+        AIReportManager.shared.createReport(
+            uad: uad,
+            peaks: recordedPeaks,
+            clips: recordedClips,
+            suggestions: findings
+        )
+
         if findings.isEmpty {
             state = .completed
             mcu?.showTempHUD(text: ">>> ALL CHANNELS NOMINAL — READY TO RECORD <<<", duration: 3.0)
@@ -535,6 +543,7 @@ public final class AIAudioAuditor {
             let resultText = apply()
             item.isApplied = true
             suggestions[currentIndex] = item
+            AIReportManager.shared.updateActiveReport(suggestions: suggestions)
             bridgeLog("[AI Auditor] Applied fix for \(item.channelName): \(resultText)")
             mcu?.showTempHUD(text: ">>> APPLIED: \(item.channelName.uppercased()) <<<", duration: 1.5)
             voice.speak("Applied! \(resultText)")
@@ -568,6 +577,7 @@ public final class AIAudioAuditor {
         }
         guard state == .consulting, currentIndex >= 0, currentIndex < suggestions.count else { return }
         suggestions[currentIndex].isSkipped = true
+        AIReportManager.shared.updateActiveReport(suggestions: suggestions)
         voice.speak("Skipped.")
         mcu?.showTempHUD(text: ">>> SKIPPED <<<", duration: 1.0)
 
