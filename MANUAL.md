@@ -31,7 +31,7 @@
    * 4.6 [Channel CUE & Sends Focus Mode (SEND / FLIP)](#46-channel-cue--sends-focus-mode-send--flip)
    * 4.7 [Preamp Focus Mode (CHANNEL Button & +48V Safety Interlock)](#47-preamp-focus-mode-channel-button--48v-safety-interlock)
    * 4.8 [Plug-in & Insert Parameter Inspector (PLUG-IN Button)](#48-plug-in--insert-parameter-inspector-plug-in-button)
-   * 4.9 [AI Studio Co-Producer & Pre-Flight Audio Inspector (FINE Key)](#49-ai-studio-co-producer--pre-flight-audio-inspector-fine-key)
+   * 4.9 [AI Studio Co-Producer & Pre-Flight Audio Inspector (FINE Key) [ALPHA]](#49-ai-studio-co-producer--pre-flight-audio-inspector-fine-key-alpha)
 5. [Built-In Voice Guidance & Accessibility Configuration](#5-built-in-voice-guidance--accessibility-configuration)
 6. [macOS Menu Bar Supervisor Guide](#6-macos-menu-bar-supervisor-guide)
 7. [Technical Protocol & MIDI Reference Matrix](#7-technical-protocol--midi-reference-matrix)
@@ -340,7 +340,10 @@ Pressing the **`PLUG-IN`** button (`Note 43`) opens the **Tactile Plugin Inspect
 
 ---
 
-### 4.9 AI Studio Co-Producer & Pre-Flight Audio Inspector (FINE Key)
+### 4.9 AI Studio Co-Producer & Pre-Flight Audio Inspector (FINE Key) [ALPHA]
+
+> [!NOTE]
+> **Alpha Development Notice:** The AI Studio Co-Producer is currently in early, experimental Alpha stage. Diagnostic heuristics and voice feedback are actively evolving.
 
 Triggered via the **`FINE` key (`Note 83` / `0x53`)**, the AI Studio Co-Producer acts as your personal automated assistant sound engineer, inspecting your entire Apollo session for audio pitfalls.
 
@@ -361,7 +364,7 @@ Triggered via the **`FINE` key (`Note 83` / `0x53`)**, the AI Studio Co-Producer
 #### How to Use:
 1. **Start Inspection:** Press the physical **`FINE`** button on your UF8.
    * **Tally Feedback:** The **FINE** button tally LED illuminates on the hardware.
-   * **HUD Banner:** Scribble strips display `>>> GEMINI AI: LISTENING ACROSS 32 CHANNELS (3s) <<<`.
+   * **HUD Banner:** Scribble strips display `>>> GEMINI AI [ALPHA]: LISTENING 32 CHS (3s) <<<`.
    * **Greeting:** Conversational speech announces: *"Hey! Play some audio, and I'll check your gain staging, signal flow, and headroom."*
 2. **Play Audio (3.5-Second Listening Window):**
    * Play your instruments or hit play on your session. The bridge records peak dBFS levels and converter clipping flags across all 32 hardware channels simultaneously.

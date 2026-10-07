@@ -42,7 +42,8 @@ It provides bidirectional motorized fader tracking, center-screen scribble strip
 
 ## Key Features
 
-### AI Studio Co-Producer & Pre-Flight Audio Inspector
+### AI Studio Co-Producer & Pre-Flight Audio Inspector [ALPHA]
+*(Experimental Alpha Stage — Early Telemetry Diagnostic Prototype)*
 * **Tactile Trigger (`FINE` Key - Note 83):** Initiates a 3.5s real-time listening window across all 32 Apollo channels measuring live peak levels and converter clipping flags.
 * **Acoustic Rule Engine:** Detects converter clipping (+0.0 dBFS), muted channels receiving active audio, low-frequency rumble lacking 75 Hz high-pass filtering, and dead cables.
 * **4-Way Arrow Cluster Triage:**

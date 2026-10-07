@@ -16,7 +16,7 @@ To overcome this disparity, we present the **UA-MCU Tactile Accessibility Bridge
 The architecture introduces three primary engineering contributions: 
 1. **Mathematical Taper Harmonization & Capacitive Interlocking:** A closed-loop continuous mapping of 14-bit motorized faders (16,384 discrete steps) to Apollo's non-linear logarithmic/exponential decibel curves with zero audible zipper noise, coupled with capacitive touch sensing that eliminates motor fighting.
 2. **Deterministic Multi-Modal Speech Synthesis:** An in-process, interruptible speech engine utilizing native `AVSpeechSynthesizer` decoupled from the host screen reader, featuring dynamic gesture debouncing (250–350 ms) and acoustic phoneme optimization (e.g., parsing studio units as *"d B"* and hardware units as *"Eleven-Seventy-Six"*).
-3. **Tactile Pre-Flight AI Co-Producer:** An on-demand audio telemetry inspector triggered via dedicated tactile input (`FINE` key) that captures 32-channel peak/clip telemetry during a 3.5-second listening window, conducts rule-based acoustic diagnostics (headroom clipping, muted active channels, low-frequency rumble, dead cables), and allows line-by-line navigation and hardware fix execution via a physical 4-way arrow cluster.
+3. **Tactile Pre-Flight AI Co-Producer (Alpha Stage Prototype):** An on-demand audio telemetry inspector triggered via dedicated tactile input (`FINE` key) that captures 32-channel peak/clip telemetry during a 3.5-second listening window, conducts rule-based acoustic diagnostics (headroom clipping, muted active channels, low-frequency rumble, dead cables), and allows line-by-line navigation and hardware fix execution via a physical 4-way arrow cluster.
 
 Benchmarking demonstrates sub-millisecond MIDI-to-network dispatch latency, less than 60 MB memory footprint, and complete operational independence from sight, restoring full tactile parity to blind music producers and sound engineers.
 
@@ -126,9 +126,12 @@ The UF8's 8 physical channel strips are virtualized into three specialized inspe
 
 ---
 
-## 4. Tactile AI Studio Co-Producer & Pre-Flight Inspector
+## 4. Tactile AI Studio Co-Producer & Pre-Flight Inspector [ALPHA / EXPERIMENTAL]
 
 ### 4.1 Motivation & Conceptualization
+> [!NOTE]
+> **Alpha Development Stage:** The AI Studio Co-Producer is an active, early-stage Alpha research prototype exploring autonomous acoustic telemetry analysis and non-visual tactile triage.
+
 For sighted engineers, identifying whether an unused microphone is live, an acoustic guitar track lacks a high-pass filter, or an analog preamp is clipping requires glancing across 32 visual peak meters. For a blind engineer, manually inspecting 32 tracks sequentially by ear requires extensive navigation that interrupts the creative flow.
 
 The **AI Studio Co-Producer** was designed to act as an automated, non-visual pre-flight diagnostic engineer.

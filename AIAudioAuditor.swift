@@ -81,8 +81,8 @@ public final class AIAudioAuditor {
         bridgeLog("[AI Auditor] Starting listening session across 32 channels...")
         mcu?.sendMIDI([0x90, 83, 0x7F]) // Illuminate FINE key (Note 83)
         mcu?.sendMIDI([0x90, 70, 0x7F])
-        mcu?.showTempHUD(text: ">>> GEMINI AI: LISTENING ACROSS 32 CHANNELS (3s) <<<", duration: 3.5)
-        voice.speak("Hey! Play some audio, and I'll check your gain staging, signal flow, and headroom.")
+        mcu?.showTempHUD(text: ">>> GEMINI AI [ALPHA]: LISTENING 32 CHS (3s) <<<", duration: 3.5)
+        voice.speak("AI Alpha inspector. Play some audio, and I'll check your gain staging, signal flow, and headroom.")
 
         // Start 3.5-second listening accumulation window
         listenTimer?.cancel()
@@ -107,8 +107,8 @@ public final class AIAudioAuditor {
         bridgeLog("[AI Auditor] Exited AI Studio session.")
         mcu?.sendMIDI([0x90, 83, 0x00]) // Turn off FINE key LED (Note 83)
         mcu?.sendMIDI([0x90, 70, 0x00])
-        mcu?.showTempHUD(text: ">>> EXITED GEMINI AI STUDIO <<<", duration: 1.2)
-        voice.speak("Exited AI session. Main mix.")
+        mcu?.showTempHUD(text: ">>> EXITED AI STUDIO [ALPHA] <<<", duration: 1.2)
+        voice.speak("Exited AI Alpha session. Main mix.")
         mcu?.refreshMainMixSurface()
     }
 
