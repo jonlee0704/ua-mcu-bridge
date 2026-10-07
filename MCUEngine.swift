@@ -868,7 +868,7 @@ public final class MCUEngine {
                 _ = uad.nudgeMonitorDb(deltaDb: Double(dir) * 1.0)
                 let dispStr = !uad.monitorMute ? String(format: "MONITOR: %+.1f dB", uad.monitorLevelDb) : "MONITOR: MUTED"
                 showTempHUD(text: ">>> \(dispStr) <<<", duration: 1.2)
-                let spkStr = !uad.monitorMute ? "Monitor \(UADCurve.formatDbSpeech(uad.monitorLevelDb))" : "Monitor Muted"
+                let spkStr = !uad.monitorMute ? "Monitor \(UADCurve.formatDbSpeech(uad.monitorLevelDb))" : "Muted"
                 voice.speakDebounced(spkStr, delay: 0.35)
                 bridgeLog("[MCU] Channel Wheel Rotation (Note \(note)) -> Monitor: \(String(format: "%.1f", uad.monitorLevelDb)) dB (Mute=\(uad.monitorMute))")
             } else {
@@ -1588,7 +1588,7 @@ public final class MCUEngine {
         let newMute = uad.toggleMonitorMute()
         let hudText = newMute ? ">>> MONITOR: MUTED <<<" : String(format: ">>> MONITOR: %+.1f dB <<<", uad.monitorLevelDb)
         showTempHUD(text: hudText, duration: 1.5)
-        let spkStr = newMute ? "Monitor Muted" : "Monitor Unmuted, \(UADCurve.formatDbSpeech(uad.monitorLevelDb))"
+        let spkStr = newMute ? "Muted" : "Unmuted, \(UADCurve.formatDbSpeech(uad.monitorLevelDb))"
         voice.speak(spkStr)
         bridgeLog("[MCU] Channel Wheel Press -> Monitor \(newMute ? "MUTED" : "UNMUTED") (\(String(format: "%.1f", uad.monitorLevelDb)) dB)")
     }
@@ -1598,7 +1598,7 @@ public final class MCUEngine {
             _ = uad.nudgeMonitorDb(deltaDb: Double(delta) * 1.0)
             let dispStr = !uad.monitorMute ? String(format: "MONITOR: %+.1f dB", uad.monitorLevelDb) : "MONITOR: MUTED"
             showTempHUD(text: ">>> \(dispStr) <<<", duration: 1.2)
-            let spkStr = !uad.monitorMute ? "Monitor \(UADCurve.formatDbSpeech(uad.monitorLevelDb))" : "Monitor Muted"
+            let spkStr = !uad.monitorMute ? "Monitor \(UADCurve.formatDbSpeech(uad.monitorLevelDb))" : "Muted"
             voice.speakDebounced(spkStr, delay: 0.35)
             bridgeLog("[MCU] Channel Wheel CC 60 -> Monitor: \(String(format: "%.1f", uad.monitorLevelDb)) dB (Mute=\(uad.monitorMute))")
         } else {
@@ -1662,14 +1662,14 @@ public final class MCUEngine {
         if eventType == "monitor_mute" {
             let isMuted = uad.monitorMute
             showTempHUD(text: isMuted ? ">>> MONITOR: MUTED <<<" : ">>> MONITOR: UNMUTED <<<", duration: 1.5)
-            voice.speak(isMuted ? "Monitor Muted" : "Monitor Unmuted")
+            voice.speak(isMuted ? "Muted" : "Unmuted")
             return
         }
 
         if eventType == "monitor_db" || eventType == "monitor" {
             let dispStr = !uad.monitorMute ? String(format: "MONITOR: %+.1f dB", uad.monitorLevelDb) : "MONITOR: MUTED"
             showTempHUD(text: ">>> \(dispStr) <<<", duration: 1.2)
-            let spkStr = !uad.monitorMute ? "Monitor \(UADCurve.formatDbSpeech(uad.monitorLevelDb))" : "Monitor Muted"
+            let spkStr = !uad.monitorMute ? "Monitor \(UADCurve.formatDbSpeech(uad.monitorLevelDb))" : "Muted"
             voice.speakDebounced(spkStr, delay: 0.35)
             return
         }

@@ -243,7 +243,7 @@ The large brushed metal encoder controls master monitoring:
   * Pressing the **Center Circle Key** (the round button in the middle of the 4-way arrow cluster) **instantly toggles Master Monitor Mute/Unmute**.
   * **Hearing Safety Guarantee:** This button remains 100% dedicated to monitor muting in **every mode**, including during active AI Studio consultations.
   * Red HUD pop-up: `>>> MONITOR: MUTED <<<` / `>>> MONITOR: UNMUTED <<<`.
-  * Spoken announcement: *"Monitor Muted"* / *"Monitor Unmuted"*.
+  * Spoken announcement: *"Muted"* / *"Unmuted, [dB]"*.
 
 ---
 
