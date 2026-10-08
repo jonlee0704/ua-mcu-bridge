@@ -203,8 +203,8 @@ public final class MCUEngine {
             // Instant attack: rise immediately to peak without delay
             current = db
         } else {
-            // Analog exponential decay: fall smoothly at ~28 dB / second (~1 segment per 70ms)
-            let decayRate = 28.0
+            // Fast analog decay: fall smoothly at ~48 dB / second to match live console dynamics
+            let decayRate = 48.0
             current = max(db, current - (decayRate * dt))
         }
         ballisticMeterDb[slot] = current
@@ -266,7 +266,8 @@ public final class MCUEngine {
                 let dispName = UADCurve.formatChannelName7Char(ch.name)
                 row1Parts.append(String(format: "%7s", (dispName as NSString).utf8String!))
                 if mainMixDisplayMode == "meters" {
-                    row2Parts.append(UADCurve.formatMeterPeak7Char(ch.meterPeak))
+                    let liveDb = (ch.meterLevel > -76.0) ? ch.meterLevel : ch.meterPeak
+                    row2Parts.append(UADCurve.formatMeterPeak7Char(liveDb))
                 } else {
                     row2Parts.append(UADCurve.formatDb7Char(ch.faderDb))
                 }
@@ -313,7 +314,8 @@ public final class MCUEngine {
             let chId = bankOffset + s
             if let ch = uad.channels[chId] {
                 if mainMixDisplayMode == "meters" {
-                    row2Parts.append(UADCurve.formatMeterPeak7Char(ch.meterPeak))
+                    let liveDb = (ch.meterLevel > -76.0) ? ch.meterLevel : ch.meterPeak
+                    row2Parts.append(UADCurve.formatMeterPeak7Char(liveDb))
                 } else {
                     row2Parts.append(UADCurve.formatDb7Char(ch.faderDb))
                 }
@@ -1676,10 +1678,12 @@ public final class MCUEngine {
         if eventType == "meter" || eventType == "meter_peak" {
             let chObj = uad.channels[chId]
             let isClip = chObj?.meterClip ?? false
-            // Use live peak level for hardware meter bars to match UAD Console exactly!
-            let dbVal = chObj?.meterPeak ?? (chObj?.meterLevel ?? -77.0)
+            let peakVal = chObj?.meterPeak ?? (chObj?.meterLevel ?? -77.0)
+            auditor?.recordTelemetry(chId: chId, peakDb: peakVal, isClip: isClip)
 
-            auditor?.recordTelemetry(chId: chId, peakDb: dbVal, isClip: isClip)
+            // CRITICAL: Visual LED ladders track instantaneous MeterLevel (RMS/VU)
+            // to bounce dynamically with audio rhythm, matching UAD Console exactly!
+            let dbVal = (chObj?.meterLevel != nil && chObj!.meterLevel > -76.0) ? chObj!.meterLevel : peakVal
 
             if pluginFocusMode {
                 if chId == pluginFocusChannel {
@@ -1707,13 +1711,13 @@ public final class MCUEngine {
         }
 
         if eventType == "monitor_meter" || eventType == "monitor_meter_peak" {
-            let peakVal = (uad.monitorMeterPeakL > -70.0 || uad.monitorMeterPeakR > -70.0)
-                ? max(uad.monitorMeterPeakL, uad.monitorMeterPeakR)
-                : max(uad.monitorMeterLevelL, uad.monitorMeterLevelR)
+            let lvlVal = max(uad.monitorMeterLevelL, uad.monitorMeterLevelR)
+            let peakVal = max(uad.monitorMeterPeakL, uad.monitorMeterPeakR)
+            let dbVal = (lvlVal > -76.0) ? lvlVal : peakVal
             let isClip = uad.monitorMeterClip
 
             if sendsFocusMode {
-                sendMeterLevel(slot: 6, db: peakVal, isClip: isClip)
+                sendMeterLevel(slot: 6, db: dbVal, isClip: isClip)
             }
             return
         }

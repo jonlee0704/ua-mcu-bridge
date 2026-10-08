@@ -130,21 +130,20 @@ public enum UADCurve {
         return String(format: "%4.0f", round(db))
     }
 
-    // Apollo Console meter tick marks:
-    // [-oo, -60, -46, -36, -27, -21, -18, -15, -12, -9, -6, -3, 0 dB]
+    // Apollo Console meter tick marks with refined musical dynamic range:
     private static let meterTicks: [(threshold: Double, seg: UInt8)] = [
-        (-60.0, 0x01),  // -60 dB
-        (-46.0, 0x02),  // -46 dB
-        (-36.0, 0x03),  // -36 dB
-        (-27.0, 0x04),  // -27 dB
-        (-21.0, 0x05),  // -21 dB
-        (-18.0, 0x06),  // -18 dB
-        (-15.0, 0x07),  // -15 dB
-        (-12.0, 0x08),  // -12 dB
-        (-9.0,  0x09),  // -9 dB
-        (-6.0,  0x0A),  // -6 dB
-        (-3.0,  0x0B),  // -3 dB
-        (-0.2,  0x0C),  // 0 dB
+        (-54.0, 0x01),  // 1 LED: -54 dB
+        (-45.0, 0x02),  // 2 LEDs: -45 dB
+        (-38.0, 0x03),  // 3 LEDs: -38 dB
+        (-32.0, 0x04),  // 4 LEDs: -32 dB
+        (-26.0, 0x05),  // 5 LEDs: -26 dB
+        (-21.0, 0x06),  // 6 LEDs: -21 dB
+        (-17.0, 0x07),  // 7 LEDs: -17 dB
+        (-13.0, 0x08),  // 8 LEDs: -13 dB
+        (-9.0,  0x09),  // 9 LEDs: -9 dB
+        (-6.0,  0x0A),  // 10 LEDs: -6 dB
+        (-3.0,  0x0B),  // 11 LEDs: -3 dB
+        (-0.2,  0x0C),  // 12 LEDs: 0 dB
     ]
 
     /// Map Apollo audio dBFS to MCU 4-bit meter nibble matching Apollo Console meter ticks:
