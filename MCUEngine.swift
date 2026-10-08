@@ -185,15 +185,43 @@ public final class MCUEngine {
     }
 
     private var lastMeterVal: [Int: UInt8] = [:]
+    private var lastMeterSendTime: [Int: Double] = [:]
+    private var ballisticMeterDb: [Int: Double] = [:]
+    private var lastBallisticUpdateTime: [Int: Double] = [:]
 
-    /// Send real-time MCU Channel Pressure meter message (0xD0).
+    /// Send real-time MCU Channel Pressure meter message (0xD0) with analog PPM ballistics and keep-alive.
     public func sendMeterLevel(slot: Int, db: Double, isClip: Bool = false) {
         guard slot >= 0, slot < numSlots else { return }
-        let val = UADCurve.dbToMcuMeter(db: db, isClip: isClip)
-        if lastMeterVal[slot] == val { return }
-        lastMeterVal[slot] = val
-        // Channel Pressure: 0xD0, (slot << 4) | val
-        sendMIDI([0xD0, UInt8((slot << 4) | Int(val))])
+
+        let now = CFAbsoluteTimeGetCurrent()
+        let lastTime = lastBallisticUpdateTime[slot] ?? now
+        let dt = min(0.1, max(0.001, now - lastTime))
+        lastBallisticUpdateTime[slot] = now
+
+        var current = ballisticMeterDb[slot] ?? -77.0
+        if db >= current {
+            // Instant attack: rise immediately to peak without delay
+            current = db
+        } else {
+            // Analog exponential decay: fall smoothly at ~28 dB / second (~1 segment per 70ms)
+            let decayRate = 28.0
+            current = max(db, current - (decayRate * dt))
+        }
+        ballisticMeterDb[slot] = current
+
+        let val = UADCurve.dbToMcuMeter(db: current, isClip: isClip)
+        let lastVal = lastMeterVal[slot] ?? 0xFF
+        let lastSend = lastMeterSendTime[slot] ?? 0.0
+
+        // Send immediately if value changed, or every 80ms as keep-alive while audio is active (> 0)
+        let shouldSend = (val != lastVal) || (val > 0 && (now - lastSend > 0.08))
+
+        if shouldSend {
+            lastMeterVal[slot] = val
+            lastMeterSendTime[slot] = now
+            // Channel Pressure: 0xD0, (slot << 4) | val
+            sendMIDI([0xD0, UInt8((slot << 4) | Int(val))])
+        }
     }
 
     public func getSendInfo(slot: Int) -> (prefix: String, name: String) {
@@ -273,6 +301,9 @@ public final class MCUEngine {
             sendLcdText(row: 2, text: r2)
         }
         lastMeterVal.removeAll()
+        lastMeterSendTime.removeAll()
+        ballisticMeterDb.removeAll()
+        lastBallisticUpdateTime.removeAll()
     }
 
     private func updateLcdRow2() {
@@ -1671,6 +1702,18 @@ public final class MCUEngine {
                         throttleUpdateLcdRow2()
                     }
                 }
+            }
+            return
+        }
+
+        if eventType == "monitor_meter" || eventType == "monitor_meter_peak" {
+            let peakVal = (uad.monitorMeterPeakL > -70.0 || uad.monitorMeterPeakR > -70.0)
+                ? max(uad.monitorMeterPeakL, uad.monitorMeterPeakR)
+                : max(uad.monitorMeterLevelL, uad.monitorMeterLevelR)
+            let isClip = uad.monitorMeterClip
+
+            if sendsFocusMode {
+                sendMeterLevel(slot: 6, db: peakVal, isClip: isClip)
             }
             return
         }

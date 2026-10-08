@@ -42,6 +42,13 @@ public final class UADClient {
     public var monitorLevelDb: Double = -37.0
     public var monitorMute: Bool = false
 
+    // Master Monitor Meters
+    public var monitorMeterLevelL: Double = -77.0
+    public var monitorMeterLevelR: Double = -77.0
+    public var monitorMeterPeakL: Double = -77.0
+    public var monitorMeterPeakR: Double = -77.0
+    public var monitorMeterClip: Bool = false
+
     // Active Bank for Metering
     public var activeBankChannels: [Int] = Array(0..<8)
     private var meterTimer: DispatchSourceTimer?
@@ -159,6 +166,60 @@ public final class UADClient {
                 NSLog("[UAD] Send error: \(err)")
             }
         }))
+    }
+
+    // MARK: - Real-Time 30 FPS Meter Polling
+
+    public func startMeterPolling() {
+        meterTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        // 30 Hz -> 33 ms interval
+        timer.schedule(deadline: .now() + 0.05, repeating: .milliseconds(33))
+        timer.setEventHandler { [weak self] in
+            self?.pollActiveMeters()
+        }
+        meterTimer = timer
+        timer.resume()
+    }
+
+    public func stopMeterPolling() {
+        meterTimer?.cancel()
+        meterTimer = nil
+    }
+
+    private func pollActiveMeters() {
+        guard isConnected, let conn = connection else { return }
+
+        var cmds: [String] = []
+
+        // 1. Poll active bank channels (inputs, virtual tracks, auxs)
+        let active = activeBankChannels
+        for chId in active {
+            if let ch = channels[chId] {
+                cmds.append("get \(ch.devPath)/meters/0")
+                if ch.stereo {
+                    cmds.append("get \(ch.devPath)/meters/1")
+                }
+            }
+        }
+
+        // 2. Poll Master Monitor Output meters
+        for p in monitorPaths {
+            cmds.append("get /devices/\(p.devId)/outputs/\(p.outId)/meters/0")
+            cmds.append("get /devices/\(p.devId)/outputs/\(p.outId)/meters/1")
+        }
+
+        guard !cmds.isEmpty else { return }
+
+        var payload = Data()
+        for cmd in cmds {
+            if let d = cmd.data(using: .utf8) {
+                payload.append(d)
+                payload.append(0x00) // Null byte delimiter
+            }
+        }
+
+        conn.send(content: payload, completion: .contentProcessed({ _ in }))
     }
 
     // MARK: - Protocol Message Parsing
@@ -340,6 +401,27 @@ public final class UADClient {
                 }
                 onChannelChange?("meter_peak", ch.id, ch.meterPeak)
                 onChannelChange?("meter", ch.id, ch.meterLevel)
+            }
+            return
+        }
+
+        // Master Output meters: /devices/{d}/outputs/{outId}/meters/{m}
+        if parts.count == 6, parts[0] == "devices", parts[2] == "outputs", parts[4] == "meters" {
+            let meterIdx = Int(parts[5]) ?? 0
+            if let dict = data as? [String: Any], let props = dict["properties"] as? [String: Any] {
+                if let lvl = toDouble((props["MeterLevel"] as? [String: Any])?["value"]) {
+                    if meterIdx == 0 { monitorMeterLevelL = lvl } else { monitorMeterLevelR = lvl }
+                }
+                if let peak = toDouble((props["MeterPeakLevel"] as? [String: Any])?["value"]) {
+                    if meterIdx == 0 { monitorMeterPeakL = peak } else { monitorMeterPeakR = peak }
+                }
+                if let clip = (props["MeterClip"] as? [String: Any])?["value"] as? Bool {
+                    monitorMeterClip = clip
+                }
+                let peakMax = max(monitorMeterPeakL, monitorMeterPeakR)
+                let lvlMax = max(monitorMeterLevelL, monitorMeterLevelR)
+                onChannelChange?("monitor_meter_peak", -1, peakMax)
+                onChannelChange?("monitor_meter", -1, lvlMax)
             }
             return
         }
@@ -785,6 +867,7 @@ public final class UADClient {
 
         onChannelChange?("channel_list", channels.count, Array(channels.keys))
         onChannelChange?("refresh_all", -1, nil)
+        startMeterPolling()
     }
 
     private func subscribeChannelProperties(ch: UADChannel, devPath: String) {
