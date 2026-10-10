@@ -156,7 +156,13 @@ public final class UADClient {
 
     // MARK: - Outbound Commands
 
+    public var testSendHook: ((String) -> Void)?
+
     public func sendCommand(_ cmd: String) {
+        if let hook = testSendHook {
+            hook(cmd)
+            return
+        }
         guard isConnected, let conn = connection else { return }
         var payload = cmd.data(using: .utf8) ?? Data()
         payload.append(0x00) // Null byte delimiter
@@ -166,6 +172,10 @@ public final class UADClient {
                 NSLog("[UAD] Send error: \(err)")
             }
         }))
+    }
+
+    public func simulateInboundFrame(path: String, data: Any?) {
+        processMessage(path: path, data: data)
     }
 
     // MARK: - Real-Time 30 FPS Meter Polling
@@ -1020,6 +1030,46 @@ public final class UADClient {
         sendCommand("set \(ch.devPath)/preamps/0/Phase/value?context_type=main&func_id=\(fid) \(inverted ? "true" : "false")")
         ch.preamp.phase = inverted
         onChannelChange?("preamp_phase", chId, inverted)
+    }
+
+    public func setPreamp48V(chId: Int, on: Bool) {
+        guard let ch = channels[chId], ch.preamp.hasPreamp, !ch.devPath.isEmpty else { return }
+        let fid = nextFuncId()
+        sendCommand("set \(ch.devPath)/preamps/0/48V/value?context_type=main&func_id=\(fid) \(on ? "true" : "false")")
+        ch.preamp.phantom48V = on
+        onChannelChange?("preamp_48v", chId, on)
+    }
+
+    @discardableResult
+    public func togglePreamp48V(chId: Int) -> Bool {
+        guard let ch = channels[chId], ch.preamp.hasPreamp else { return false }
+        let newVal = !ch.preamp.phantom48V
+        setPreamp48V(chId: chId, on: newVal)
+        return newVal
+    }
+
+    @discardableResult
+    public func togglePreampLowCut(chId: Int) -> Bool {
+        guard let ch = channels[chId], ch.preamp.hasPreamp else { return false }
+        let newVal = !ch.preamp.lowCut
+        setPreampLowCut(chId: chId, on: newVal)
+        return newVal
+    }
+
+    @discardableResult
+    public func togglePreampPad(chId: Int) -> Bool {
+        guard let ch = channels[chId], ch.preamp.hasPreamp else { return false }
+        let newVal = !ch.preamp.pad
+        setPreampPad(chId: chId, on: newVal)
+        return newVal
+    }
+
+    @discardableResult
+    public func togglePreampPhase(chId: Int) -> Bool {
+        guard let ch = channels[chId], ch.preamp.hasPreamp else { return false }
+        let newVal = !ch.preamp.phase
+        setPreampPhase(chId: chId, inverted: newVal)
+        return newVal
     }
 
     public func setSendGain(chId: Int, sendIdx: Int, value: Double) {

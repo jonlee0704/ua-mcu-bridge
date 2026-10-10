@@ -20,3 +20,9 @@ scratch/
 *.aiff
 *.mp3
 *.m4a
+
+# Binaries
+UAMCUBridge
+UAMCUBridgeTests
+*.dSYM/
+

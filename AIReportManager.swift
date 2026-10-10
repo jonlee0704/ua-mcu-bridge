@@ -11,6 +11,7 @@
 
 import Foundation
 import Cocoa
+import UniformTypeIdentifiers
 
 /// Manages generation, storage, local export, and emailing of AI Co-Producer diagnostic reports.
 /// Retains the latest 10 reports on disk and provides an accessible macOS viewer window.
@@ -238,7 +239,7 @@ public final class AIReportManager {
             panel.title = "Save AI Co-Producer Report"
             panel.prompt = "Save"
             panel.nameFieldStringValue = url.lastPathComponent
-            panel.allowedFileTypes = ["txt", "md"]
+            panel.allowedContentTypes = [UTType.plainText]
             panel.canCreateDirectories = true
 
             let handler: (NSApplication.ModalResponse) -> Void = { response in

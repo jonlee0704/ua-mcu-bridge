@@ -1641,7 +1641,7 @@ public final class MCUEngine {
         }
     }
 
-    public func toggleMonitorMute() {
+    public func toggleMonitorMute(immediate: Bool = false) {
         if uad.monitorMute {
             // UNMUTE: Restore Apollo hardware sound immediately (0ms delay)
             uad.setMonitorMute(mute: false)
@@ -1654,7 +1654,14 @@ public final class MCUEngine {
             // MUTE:
             // 1. Instantly display MUTED HUD on hardware scribble strips (0ms visual feedback)
             showTempHUD(text: ">>> MONITOR: MUTED <<<", duration: 1.5)
-            bridgeLog("[MCU] Channel Wheel Press -> Initiating Monitor MUTE (speaking 'Muted' before hardware cut)...")
+            bridgeLog("[MCU] Channel Wheel Press -> Initiating Monitor MUTE...")
+
+            // Immediate execution when voice is disabled (e.g. tests or silent studio setup)
+            if !voice.isEnabled || immediate {
+                uad.setMonitorMute(mute: true)
+                bridgeLog("[MCU] Channel Wheel Press -> Monitor MUTED (\(String(format: "%.1f", uad.monitorLevelDb)) dB)")
+                return
+            }
 
             // 2. Speak "Muted" FIRST through Apollo monitors/headphones
             // 3. Hardware mute executes the moment speech finishes (or via 0.45s safety timer)
