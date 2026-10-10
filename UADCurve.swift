@@ -255,6 +255,39 @@ public enum UADCurve {
         return String(s.prefix(7))
     }
 
+    /// Format send/cue title into a clean, centered 7-character string for MCU scribble strips.
+    public static func formatSendTitle7Char(_ title: String) -> String {
+        var s = title.trimmingCharacters(in: .whitespaces)
+        if s.isEmpty { return "       " }
+        if s.count == 7 { return s }
+        if s.count > 7 {
+            let lower = s.lowercased()
+            if lower == "positive grid" { return "PosGrid" }
+            if lower.hasPrefix("positive") { return "PosGrid" }
+            if lower == "headphones" || lower == "headphone" { return "Headphn" }
+            let replacements = [
+                ("Monitor", "Mon"),
+                ("Master", "Mstr"),
+                ("Output", "Out"),
+                ("Reverb", "Rev"),
+                ("Delay", "Dly")
+            ]
+            for (from, to) in replacements {
+                if s.contains(from) {
+                    s = s.replacingOccurrences(of: from, with: to)
+                    if s.count <= 7 { break }
+                }
+            }
+            if s.count > 7 {
+                s = String(s.prefix(7))
+            }
+        }
+        let totalPad = max(0, 7 - s.count)
+        let leftPad = totalPad / 2
+        let rightPad = totalPad - leftPad
+        return String(repeating: " ", count: leftPad) + s + String(repeating: " ", count: rightPad)
+    }
+
     /// Format plug-in parameter name into a clean 7-character string.
     public static func formatParamName7Char(_ name: String) -> String {
         var s = name.trimmingCharacters(in: .whitespaces)

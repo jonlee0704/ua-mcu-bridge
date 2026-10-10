@@ -34,6 +34,15 @@ public final class MCUEngine {
     public var sendsFocusChannel: Int = 0
     public var activeSendIdx: Int? = nil
 
+    // Customizable CUE & SENDS scribble strip labels (Slots 0..7)
+    public var sendLabels: [String] = ["AUX 1", "AUX 2", "HP 1", "HP 2", "CUE 3", "CUE 4", "OUTPUT", "PAN"] {
+        didSet {
+            if sendsFocusMode {
+                refreshSendsFocusSurface()
+            }
+        }
+    }
+
     // Wheel Mode: "monitor" or "channel"
     public var wheelMode: String = "monitor"
     public var mainMixDisplayMode: String = "fader" // "fader" or "meters"
@@ -225,19 +234,18 @@ public final class MCUEngine {
     }
 
     public func getSendInfo(slot: Int) -> (prefix: String, name: String) {
-        if slot == 0 {
-            return ("A1", "AUX 1")
-        } else if slot == 1 {
-            return ("A2", "AUX 2")
-        } else if slot >= 2 && slot <= 5 {
-            let cueNum = slot - 1
-            return ("C\(cueNum)", "CUE \(cueNum)")
-        } else if slot == 6 {
-            return ("OUT", "Output")
-        } else if slot == 7 {
-            return ("PAN", "Pan")
+        let defaultPrefixes = ["A1", "A2", "C1", "C2", "C3", "C4", "OUT", "PAN"]
+        let defaultNames = ["AUX 1", "AUX 2", "HP 1", "HP 2", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
+        let prefix = (slot >= 0 && slot < defaultPrefixes.count) ? defaultPrefixes[slot] : "S\(slot + 1)"
+        let name: String
+        if slot >= 0 && slot < sendLabels.count && !sendLabels[slot].trimmingCharacters(in: .whitespaces).isEmpty {
+            name = sendLabels[slot].trimmingCharacters(in: .whitespaces)
+        } else if slot >= 0 && slot < defaultNames.count {
+            name = defaultNames[slot]
+        } else {
+            name = "SEND \(slot + 1)"
         }
-        return ("S\(slot + 1)", "SEND \(slot + 1)")
+        return (prefix, name)
     }
 
     // MARK: - Surface Refresh Routines
@@ -546,7 +554,6 @@ public final class MCUEngine {
 
     public func refreshSendsFocusSurface() {
         guard let ch = uad.channels[sendsFocusChannel] else { return }
-        let chName = ch.name.trimmingCharacters(in: .whitespaces)
         let isAux = (ch.chType == "aux")
 
         // Slots 0 to 5: AUX 1, AUX 2, CUE 1..4
@@ -585,54 +592,12 @@ public final class MCUEngine {
         sendSelLed(slot: 7, on: abs(effPan) < 0.03)
         sendVpotLedRing(slot: 7, pan: effPan)
 
-        // LCD Row 1 (Main Text): AUX, CUE names and values
+        // LCD Row 1 (Main Title Text): Custom Cue & Send Titles (centered 7 characters per slot)
         var row1Slots: [String] = []
         for slot in 0..<numSlots {
-            if slot >= 0 && slot <= 1 {
-                let prefix = "A\(slot + 1):"
-                if isAux {
-                    row1Slots.append("\(prefix) ---")
-                } else {
-                    let send = ch.sends[slot]
-                    if send?.bypass == true {
-                        row1Slots.append("\(prefix) BYP")
-                    } else {
-                        let dbVal = send?.gainDb ?? -144.0
-                        let sDb = UADCurve.formatCompactDb(dbVal)
-                        let sPadded = String(format: "%4s", (sDb as NSString).utf8String!)
-                        row1Slots.append("\(prefix)\(sPadded)")
-                    }
-                }
-            } else if slot >= 2 && slot <= 5 {
-                let cueNum = slot - 1
-                let prefix = "C\(cueNum):"
-                let send = ch.sends[slot]
-                if send?.bypass == true {
-                    row1Slots.append("\(prefix) BYP")
-                } else {
-                    let dbVal = send?.gainDb ?? -144.0
-                    let sDb = UADCurve.formatCompactDb(dbVal)
-                    let sPadded = String(format: "%4s", (sDb as NSString).utf8String!)
-                    row1Slots.append("\(prefix)\(sPadded)")
-                }
-            } else if slot == 6 {
-                if ch.mute {
-                    row1Slots.append("OUT:MUT")
-                } else {
-                    let sDb = UADCurve.formatCompactDb(ch.faderDb)
-                    let sPadded = String(format: "%4s", (sDb as NSString).utf8String!)
-                    row1Slots.append("OUT\(sPadded)")
-                }
-            } else if slot == 7 {
-                let effPan = uad.getEffectivePan(chId: sendsFocusChannel)
-                if isAux || abs(effPan) < 0.03 {
-                    row1Slots.append("PAN   C")
-                } else if effPan < 0 {
-                    row1Slots.append(String(format: "PAN L%02d", Int(abs(effPan) * 100)))
-                } else {
-                    row1Slots.append(String(format: "PAN R%02d", Int(effPan * 100)))
-                }
-            }
+            let info = getSendInfo(slot: slot)
+            let title7 = UADCurve.formatSendTitle7Char(info.name)
+            row1Slots.append(title7)
         }
         let r1 = row1Slots.joined()
         if r1 != lastRow1Text {
@@ -640,17 +605,51 @@ public final class MCUEngine {
             sendLcdText(row: 1, text: r1)
         }
 
-        // LCD Row 2 (Subtext): Channel name text centered across all slots
+        // LCD Row 2 (Value Numbers): Numerical dB and status values for each Cue/Send slot
         if !hudActive {
-            let chDisp = UADCurve.formatChannelName7Char(chName)
-            let totalPad = max(0, 7 - chDisp.count)
-            let leftPad = totalPad / 2
-            let rightPad = totalPad - leftPad
-            let centeredCh = String(repeating: " ", count: leftPad) + chDisp + String(repeating: " ", count: rightPad)
-            let row2 = String(repeating: centeredCh, count: numSlots)
-            if row2 != lastRow2Text {
-                lastRow2Text = row2
-                sendLcdText(row: 2, text: row2)
+            var row2Slots: [String] = []
+            for slot in 0..<numSlots {
+                if slot >= 0 && slot <= 1 {
+                    if isAux {
+                        row2Slots.append("  ---  ")
+                    } else {
+                        let send = ch.sends[slot]
+                        if send?.bypass == true {
+                            row2Slots.append("  BYP  ")
+                        } else {
+                            let dbVal = send?.gainDb ?? -144.0
+                            row2Slots.append(UADCurve.formatDb7Char(dbVal))
+                        }
+                    }
+                } else if slot >= 2 && slot <= 5 {
+                    let send = ch.sends[slot]
+                    if send?.bypass == true {
+                        row2Slots.append("  BYP  ")
+                    } else {
+                        let dbVal = send?.gainDb ?? -144.0
+                        row2Slots.append(UADCurve.formatDb7Char(dbVal))
+                    }
+                } else if slot == 6 {
+                    if ch.mute {
+                        row2Slots.append(" MUTED ")
+                    } else {
+                        row2Slots.append(UADCurve.formatDb7Char(ch.faderDb))
+                    }
+                } else if slot == 7 {
+                    let effPan = uad.getEffectivePan(chId: sendsFocusChannel)
+                    if isAux || abs(effPan) < 0.03 {
+                        row2Slots.append("   C   ")
+                    } else if effPan < 0 {
+                        row2Slots.append(String(format: "  L%02d  ", Int(abs(effPan) * 100)))
+                    } else {
+                        row2Slots.append(String(format: "  R%02d  ", Int(effPan * 100)))
+                    }
+                }
+            }
+            let r2 = row2Slots.joined()
+            if r2 != lastRow2Text {
+                lastRow2Text = r2
+                sendLcdText(row: 2, text: r2)
             }
         }
     }

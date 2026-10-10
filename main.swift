@@ -23,6 +23,7 @@ struct BridgeConfig: Codable {
     var speechFeedback: Bool = true
     var speechVolume: Float = 0.5
     var speechRate: Float = 0.52
+    var sendLabels: [String] = ["AUX 1", "AUX 2", "HP 1", "HP 2", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
 
     enum CodingKeys: String, CodingKey {
         case port = "port"
@@ -30,6 +31,7 @@ struct BridgeConfig: Codable {
         case speechFeedback = "speech_feedback"
         case speechVolume = "speech_volume"
         case speechRate = "speech_rate"
+        case sendLabels = "send_labels"
     }
 }
 
@@ -64,6 +66,15 @@ final class ConfigManager {
             if let savedRate = UserDefaults.standard.value(forKey: "UAMCUSpeechRate") as? Float {
                 config.speechRate = savedRate
             }
+            if let savedLabels = UserDefaults.standard.stringArray(forKey: "UAMCUSendLabels"), !savedLabels.isEmpty {
+                config.sendLabels = savedLabels
+            }
+        }
+        let defaultSendLabels = ["AUX 1", "AUX 2", "HP 1", "HP 2", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
+        if config.sendLabels.count < 8 {
+            for i in config.sendLabels.count..<8 {
+                config.sendLabels.append(defaultSendLabels[i])
+            }
         }
         return config
     }
@@ -81,6 +92,7 @@ final class ConfigManager {
         UserDefaults.standard.set(config.speechFeedback, forKey: "UAMCUSpeechFeedback")
         UserDefaults.standard.set(config.speechVolume, forKey: "UAMCUSpeechVolume")
         UserDefaults.standard.set(config.speechRate, forKey: "UAMCUSpeechRate")
+        UserDefaults.standard.set(config.sendLabels, forKey: "UAMCUSendLabels")
     }
 }
 
@@ -188,6 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.midiAdapter.sendMIDI(bytes)
         }, voice: VoiceAnnouncer.shared)
         mcuEngine.wheelMode = config.wheelMode
+        mcuEngine.sendLabels = config.sendLabels
 
         // 4. Connect MIDI Port
         connectMIDIPort(config.port)
@@ -341,6 +354,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let wheelParentItem = NSMenuItem(title: "Channel Wheel Mode", action: nil, keyEquivalent: "")
         wheelParentItem.submenu = wheelMenu
         menu.addItem(wheelParentItem)
+
+        // 5. CUE & SENDS Display Labels Submenu
+        let sendLabelMenu = NSMenu(title: "CUE / SENDS Display Labels")
+
+        let editAllItem = NSMenuItem(title: "Edit All CUE / SENDS Labels...", action: #selector(handleEditAllSendLabels(_:)), keyEquivalent: "")
+        editAllItem.target = self
+        sendLabelMenu.addItem(editAllItem)
+        sendLabelMenu.addItem(NSMenuItem.separator())
+
+        let slotNames = ["Aux 1 (A1)", "Aux 2 (A2)", "Cue 1 (C1)", "Cue 2 (C2)", "Cue 3 (C3)", "Cue 4 (C4)", "Output (OUT)", "Pan (PAN)"]
+        for s in 0..<slotNames.count {
+            let currentName = (s < config.sendLabels.count) ? config.sendLabels[s] : ""
+            let item = NSMenuItem(title: "\(slotNames[s]): \"\(currentName)\"...", action: #selector(handleEditSingleSendLabel(_:)), keyEquivalent: "")
+            item.tag = s
+            item.target = self
+            sendLabelMenu.addItem(item)
+        }
+
+        sendLabelMenu.addItem(NSMenuItem.separator())
+
+        // Presets Submenu
+        let presetsMenu = NSMenu(title: "Presets")
+        let p1 = NSMenuItem(title: "Default (AUX 1, AUX 2, HP 1, HP 2, CUE 3, CUE 4)", action: #selector(handleApplySendLabelPreset(_:)), keyEquivalent: "")
+        p1.tag = 1
+        p1.target = self
+        presetsMenu.addItem(p1)
+
+        let p2 = NSMenuItem(title: "Studio Monitor & Rig (AUX 1, AUX 2, Monitor, PosGrid, CUE 3, CUE 4)", action: #selector(handleApplySendLabelPreset(_:)), keyEquivalent: "")
+        p2.tag = 2
+        p2.target = self
+        presetsMenu.addItem(p2)
+
+        let p3 = NSMenuItem(title: "Headphone & QSB (AUX 1, AUX 2, HP1, QSB, CUE 3, CUE 4)", action: #selector(handleApplySendLabelPreset(_:)), keyEquivalent: "")
+        p3.tag = 3
+        p3.target = self
+        presetsMenu.addItem(p3)
+
+        let p4 = NSMenuItem(title: "Live IEM & FX (Reverb, Delay, Vox IEM, Band IEM, CUE 3, CUE 4)", action: #selector(handleApplySendLabelPreset(_:)), keyEquivalent: "")
+        p4.tag = 4
+        p4.target = self
+        presetsMenu.addItem(p4)
+
+        let presetsParent = NSMenuItem(title: "Label Presets", action: nil, keyEquivalent: "")
+        presetsParent.submenu = presetsMenu
+        sendLabelMenu.addItem(presetsParent)
+
+        sendLabelMenu.addItem(NSMenuItem.separator())
+
+        let resetLabelsItem = NSMenuItem(title: "Reset Labels to Defaults", action: #selector(handleResetSendLabels(_:)), keyEquivalent: "")
+        resetLabelsItem.target = self
+        sendLabelMenu.addItem(resetLabelsItem)
+
+        let sendLabelParentItem = NSMenuItem(title: "CUE / SENDS Display Labels", action: nil, keyEquivalent: "")
+        sendLabelParentItem.submenu = sendLabelMenu
+        menu.addItem(sendLabelParentItem)
 
         // 5. Voice Guidance Submenu
         let voiceMenu = NSMenu(title: "Voice Guidance")
@@ -508,6 +576,120 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         VoiceAnnouncer.shared.speak("Wheel locked to Monitor Volume")
         ConfigManager.shared.save(config)
         buildMenu()
+    }
+
+    // MARK: - CUE & SENDS Label Editor Actions
+
+    @objc private func handleEditAllSendLabels(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "Edit All CUE / SENDS Display Labels"
+        alert.informativeText = "Customize scribble strip titles for Row 1 in CUE/SENDS mode.\nValue numbers and dB readouts will display on Row 2."
+        alert.addButton(withTitle: "Save Labels")
+        alert.addButton(withTitle: "Cancel")
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 340, height: 260))
+        var textFields: [NSTextField] = []
+        let slotNames = [
+            ("Aux 1 (A1):", (config.sendLabels.count > 0) ? config.sendLabels[0] : "AUX 1"),
+            ("Aux 2 (A2):", (config.sendLabels.count > 1) ? config.sendLabels[1] : "AUX 2"),
+            ("Cue 1 (C1):", (config.sendLabels.count > 2) ? config.sendLabels[2] : "HP 1"),
+            ("Cue 2 (C2):", (config.sendLabels.count > 3) ? config.sendLabels[3] : "HP 2"),
+            ("Cue 3 (C3):", (config.sendLabels.count > 4) ? config.sendLabels[4] : "CUE 3"),
+            ("Cue 4 (C4):", (config.sendLabels.count > 5) ? config.sendLabels[5] : "CUE 4"),
+            ("Output (OUT):", (config.sendLabels.count > 6) ? config.sendLabels[6] : "OUTPUT"),
+            ("Pan (PAN):", (config.sendLabels.count > 7) ? config.sendLabels[7] : "PAN")
+        ]
+
+        let rowHeight: CGFloat = 30
+        for (i, item) in slotNames.enumerated() {
+            let y = CGFloat(slotNames.count - 1 - i) * rowHeight + 8
+            let label = NSTextField(labelWithString: item.0)
+            label.frame = NSRect(x: 0, y: y + 2, width: 110, height: 20)
+            label.alignment = .right
+            label.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+            container.addSubview(label)
+
+            let input = NSTextField(frame: NSRect(x: 120, y: y, width: 200, height: 24))
+            input.stringValue = item.1
+            input.font = NSFont.systemFont(ofSize: 13)
+            container.addSubview(input)
+            textFields.append(input)
+        }
+
+        alert.accessoryView = container
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            for (i, tf) in textFields.enumerated() {
+                let trimmed = tf.stringValue.trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty && i < config.sendLabels.count {
+                    config.sendLabels[i] = trimmed
+                }
+            }
+            ConfigManager.shared.save(config)
+            mcuEngine.sendLabels = config.sendLabels
+            buildMenu()
+            VoiceAnnouncer.shared.speak("All Cue labels saved")
+        }
+    }
+
+    @objc private func handleEditSingleSendLabel(_ sender: NSMenuItem) {
+        let slot = sender.tag
+        guard slot >= 0 && slot < config.sendLabels.count else { return }
+        let slotNames = ["Aux 1 (A1)", "Aux 2 (A2)", "Cue 1 (C1)", "Cue 2 (C2)", "Cue 3 (C3)", "Cue 4 (C4)", "Output (OUT)", "Pan (PAN)"]
+        let slotTitle = (slot < slotNames.count) ? slotNames[slot] : "Slot \(slot + 1)"
+
+        let alert = NSAlert()
+        alert.messageText = "Edit Label for \(slotTitle)"
+        alert.informativeText = "Enter a title for \(slotTitle) (up to 7 characters, e.g. HP 1, Monitor, QSB, PosGrid):\nThis text appears on Row 1 in CUE/SENDS mode, with values on Row 2."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        input.stringValue = config.sendLabels[slot]
+        input.font = NSFont.systemFont(ofSize: 13)
+        alert.accessoryView = input
+
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            let trimmed = input.stringValue.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty {
+                config.sendLabels[slot] = trimmed
+                ConfigManager.shared.save(config)
+                mcuEngine.sendLabels = config.sendLabels
+                buildMenu()
+                VoiceAnnouncer.shared.speak("\(slotTitle) renamed to \(trimmed)")
+            }
+        }
+    }
+
+    @objc private func handleApplySendLabelPreset(_ sender: NSMenuItem) {
+        switch sender.tag {
+        case 1:
+            config.sendLabels = ["AUX 1", "AUX 2", "HP 1", "HP 2", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
+            VoiceAnnouncer.shared.speak("Default Cue labels applied")
+        case 2:
+            config.sendLabels = ["AUX 1", "AUX 2", "Monitor", "PosGrid", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
+            VoiceAnnouncer.shared.speak("Monitor and Rig labels applied")
+        case 3:
+            config.sendLabels = ["AUX 1", "AUX 2", "HP1", "QSB", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
+            VoiceAnnouncer.shared.speak("Headphone and QSB labels applied")
+        case 4:
+            config.sendLabels = ["Reverb", "Delay", "Vox IEM", "Band IEM", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
+            VoiceAnnouncer.shared.speak("Live IEM labels applied")
+        default:
+            break
+        }
+        ConfigManager.shared.save(config)
+        mcuEngine.sendLabels = config.sendLabels
+        buildMenu()
+    }
+
+    @objc private func handleResetSendLabels(_ sender: Any?) {
+        config.sendLabels = ["AUX 1", "AUX 2", "HP 1", "HP 2", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
+        ConfigManager.shared.save(config)
+        mcuEngine.sendLabels = config.sendLabels
+        buildMenu()
+        VoiceAnnouncer.shared.speak("Cue labels reset to defaults")
     }
 
     @objc private func handleToggleVoice(_ sender: NSMenuItem) {
