@@ -916,13 +916,13 @@ public final class MCUEngine {
         wheelPressTimer?.cancel()
         wheelPressTimer = nil
 
-        // CHANNEL ROTARY WHEEL (Notes 46, 47, 48, 49)
-        // Master rotary wheel controls ONLY Apollo Master Monitor Volume!
-        // Never step channels/banks, never move motorized faders, never change track fader dB!
-        if note == 46 || note == 47 || note == 48 || note == 49 {
+        // CHANNEL ROTARY WHEEL (Notes 46, 47)
+        // Master rotary wheel in BANK mode transmits Notes 46 / 47.
+        // Controls ONLY Apollo Master Monitor Volume!
+        if note == 46 || note == 47 {
             wheelRotatedDuringPress = true
             wheelPressMuteTriggered = true
-            let dir = (note == 46 || note == 48) ? -1 : 1
+            let dir = (note == 46) ? -1 : 1
             _ = uad.nudgeMonitorDb(deltaDb: Double(dir) * 1.0)
             let dispStr = !uad.monitorMute ? String(format: "MONITOR: %+.1f dB", uad.monitorLevelDb) : "MONITOR: MUTED"
             showTempHUD(text: ">>> \(dispStr) <<<", duration: 1.2)
@@ -1019,9 +1019,9 @@ public final class MCUEngine {
             }
         }
 
-        // Hardware PAGE buttons: Notes 44, 45 (Bank by 8 tracks)
-        if note == 44 || note == 45 {
-            let dir = (note == 44) ? -1 : 1
+        // Hardware PAGE buttons: Notes 48, 49 (and 44, 45) -> Bank by 8 tracks
+        if note == 48 || note == 49 || note == 44 || note == 45 {
+            let dir = (note == 48 || note == 44) ? -1 : 1
             if sendsFocusMode {
                 stepSendsChannel(delta: dir)
             } else if pluginFocusMode {
@@ -1564,6 +1564,14 @@ public final class MCUEngine {
             uad.activeBankChannels = Array(bankOffset..<min(uad.channels.count, bankOffset + 8))
             refreshMainMixSurface()
             voice.speak("Tracks \(bankOffset + 1) through \(min(uad.channels.count, bankOffset + 8))")
+            bridgeLog("[MCU] Paged bank: offset=\(bankOffset) (Tracks \(bankOffset + 1)..\(min(uad.channels.count, bankOffset + 8)))")
+        } else {
+            if delta > 0 {
+                voice.speakDebounced("Last page", delay: 0.25)
+            } else {
+                voice.speakDebounced("First page", delay: 0.25)
+            }
+            bridgeLog("[MCU] Bank boundary reached: offset=\(bankOffset)")
         }
     }
 
