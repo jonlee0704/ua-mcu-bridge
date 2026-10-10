@@ -337,9 +337,11 @@ public final class UADClient {
                 let prop = parts[4]
                 if prop == "CRMonitorLevelTapered", let val = toDouble(data) {
                     monitorLevelTapered = val
+                    monitorLevelDb = UADCurve.taperedToDb(val)
                     onChannelChange?("monitor", -1, val)
                 } else if prop == "CRMonitorLevel", let val = toDouble(data) {
                     monitorLevelDb = val
+                    monitorLevelTapered = UADCurve.dbToTapered(val)
                     onChannelChange?("monitor_db", -1, val)
                 } else if prop == "Mute", let val = data as? Bool {
                     monitorMute = val
@@ -1151,17 +1153,24 @@ public final class UADClient {
     }
 
     public func setMonitorLevelTapered(tapered: Double) {
-        let fid = nextFuncId()
         let val = max(0.0, min(1.0, tapered))
-        sendCommand("set /devices/\(monitorDeviceId)/outputs/\(monitorOutputId)/CRMonitorLevelTapered/value?context_type=main&func_id=\(fid) \(String(format: "%.6f", val))")
+        let db = UADCurve.taperedToDb(val)
+        let paths = monitorPaths.isEmpty ? [(monitorDeviceId, monitorOutputId)] : monitorPaths
+        for (dId, oId) in paths {
+            let fid1 = nextFuncId()
+            let fid2 = nextFuncId()
+            sendCommand("set /devices/\(dId)/outputs/\(oId)/CRMonitorLevelTapered/value?context_type=main&func_id=\(fid1) \(String(format: "%.6f", val))")
+            sendCommand("set /devices/\(dId)/outputs/\(oId)/CRMonitorLevel/value?context_type=main&func_id=\(fid2) \(String(format: "%.1f", db))")
+        }
         monitorLevelTapered = val
-        monitorLevelDb = UADCurve.taperedToDb(val)
+        monitorLevelDb = db
+        bridgeLog("[UAD] setMonitorLevelTapered -> \(String(format: "%.4f", val)) (\(String(format: "%.1f", db)) dB) dispatched to \(paths.map { "/devices/\($0.devId)/outputs/\($0.outId)" })")
     }
 
     public func setMonitorMute(mute: Bool) {
-        let fid = nextFuncId()
         let paths = monitorPaths.isEmpty ? [(monitorDeviceId, monitorOutputId)] : monitorPaths
         for (dId, oId) in paths {
+            let fid = nextFuncId()
             sendCommand("set /devices/\(dId)/outputs/\(oId)/Mute/value?context_type=main&func_id=\(fid) \(mute ? "true" : "false")")
         }
         monitorMute = mute
@@ -1175,14 +1184,18 @@ public final class UADClient {
     }
 
     public func setMonitorDb(db: Double) {
-        let fid = nextFuncId()
         let val = max(-96.0, min(0.0, db))
+        let tapered = UADCurve.dbToTapered(val)
         let paths = monitorPaths.isEmpty ? [(monitorDeviceId, monitorOutputId)] : monitorPaths
         for (dId, oId) in paths {
-            sendCommand("set /devices/\(dId)/outputs/\(oId)/CRMonitorLevel/value?context_type=main&func_id=\(fid) \(String(format: "%.1f", val))")
+            let fid1 = nextFuncId()
+            let fid2 = nextFuncId()
+            sendCommand("set /devices/\(dId)/outputs/\(oId)/CRMonitorLevel/value?context_type=main&func_id=\(fid1) \(String(format: "%.1f", val))")
+            sendCommand("set /devices/\(dId)/outputs/\(oId)/CRMonitorLevelTapered/value?context_type=main&func_id=\(fid2) \(String(format: "%.6f", tapered))")
         }
         monitorLevelDb = val
-        bridgeLog("[UAD] setMonitorDb -> \(String(format: "%.1f", val)) dB dispatched to \(paths.map { "/devices/\($0.devId)/outputs/\($0.outId)" })")
+        monitorLevelTapered = tapered
+        bridgeLog("[UAD] setMonitorDb -> \(String(format: "%.1f", val)) dB (tapered=\(String(format: "%.4f", tapered))) dispatched to \(paths.map { "/devices/\($0.devId)/outputs/\($0.outId)" })")
     }
 
     public func nudgeMonitorDb(deltaDb: Double) -> Bool {

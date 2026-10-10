@@ -473,6 +473,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let aiReportParent = NSMenuItem(title: "AI Co-Producer Reports [ALPHA]", action: nil, keyEquivalent: "")
         let aiReportMenu = NSMenu(title: "AI Co-Producer Reports")
 
+        let triggerAiItem = NSMenuItem(title: "Trigger AI Co-Producer Session (FINE Key)...", action: #selector(handleTriggerAiSession(_:)), keyEquivalent: "")
+        triggerAiItem.target = self
+        aiReportMenu.addItem(triggerAiItem)
+        aiReportMenu.addItem(NSMenuItem.separator())
+
         let openReportsWindowItem = NSMenuItem(title: "Open AI Reports Window...", action: #selector(handleOpenAIReportsWindow(_:)), keyEquivalent: "")
         openReportsWindowItem.target = self
         aiReportMenu.addItem(openReportsWindowItem)
@@ -753,6 +758,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // MARK: - AI Reports Action Handlers
+
+    @objc private func handleTriggerAiSession(_ sender: NSMenuItem) {
+        mcuEngine.auditor.handleFineButton()
+    }
 
     @objc private func handleOpenAIReportsWindow(_ sender: NSMenuItem) {
         AIReportManager.shared.showReportsWindow()

@@ -658,69 +658,88 @@ public final class MCUEngine {
 
     public func handleMidiBytes(_ bytes: [UInt8]) {
         guard !bytes.isEmpty else { return }
-        let status = bytes[0]
 
-        if (status & 0xF0) != 0xE0 {
-            bridgeLog("[MIDI-IN] hex: " + bytes.map { String(format: "%02X", $0) }.joined(separator: " "))
-        }
+        var i = 0
+        while i < bytes.count {
+            let status = bytes[i]
 
-        // Pitch Bend (Faders 0..7)
-        if (status & 0xF0) == 0xE0, bytes.count >= 3 {
-            let slot = Int(status & 0x0F)
-            let lsb = Int(bytes[1])
-            let msb = Int(bytes[2])
-            let intVal = (msb << 7) | lsb
-            let tapered = Double(intVal) / 16383.0
-
-            if pluginFocusMode {
-                handlePluginFocusFader(slot: slot, tapered: tapered)
-            } else if sendsFocusMode {
-                handleSendsFocusFader(slot: slot, tapered: tapered)
-            } else if !preampFocusMode {
-                let chId = bankOffset + slot
-                uad.setFader(chId: chId, tapered: tapered)
+            // SysEx
+            if status == 0xF0 {
+                while i < bytes.count && bytes[i] != 0xF7 {
+                    i += 1
+                }
+                if i < bytes.count && bytes[i] == 0xF7 {
+                    i += 1
+                }
+                continue
             }
-            return
-        }
 
-        // CC Messages (V-Pots 16..23, Wheel 60)
-        if (status & 0xF0) == 0xB0, bytes.count >= 3 {
-            let cc = bytes[1]
-            let val = bytes[2]
+            // Realtime single-byte messages (0xF8..0xFF)
+            if status >= 0xF8 {
+                i += 1
+                continue
+            }
 
-            // V-Pots (CC 16..23)
-            if cc >= 16 && cc <= 23 {
-                let slot = Int(cc - 16)
-                let delta = (val & 0x40) != 0 ? -Int(val & 0x3F) : Int(val & 0x3F)
+            let msgType = status & 0xF0
+
+            // Pitch Bend (Faders 0..7, 3 bytes: 0xE0 | slot, LSB, MSB)
+            if msgType == 0xE0 {
+                guard i + 2 < bytes.count else { break }
+                let slot = Int(status & 0x0F)
+                let lsb = Int(bytes[i + 1])
+                let msb = Int(bytes[i + 2])
+                let intVal = (msb << 7) | lsb
+                let tapered = Double(intVal) / 16383.0
 
                 if pluginFocusMode {
-                    handlePluginFocusVpot(slot: slot, delta: delta)
+                    handlePluginFocusFader(slot: slot, tapered: tapered)
                 } else if sendsFocusMode {
-                    handleSendsFocusVpot(slot: slot, delta: delta)
+                    handleSendsFocusFader(slot: slot, tapered: tapered)
                 } else if !preampFocusMode {
                     let chId = bankOffset + slot
-                    if let ch = uad.channels[chId] {
-                        let newPan = max(-1.0, min(1.0, ch.pan + Double(delta) * 0.02))
-                        uad.setPan(chId: chId, pan: newPan)
-                    }
+                    uad.setFader(chId: chId, tapered: tapered)
                 }
-                return
-            }
+                i += 3
+            } else if msgType == 0xB0 { // Control Change (3 bytes: 0xB0, CC, Val)
+                guard i + 2 < bytes.count else { break }
+                let cc = bytes[i + 1]
+                let val = bytes[i + 2]
 
-            // Jog Wheel / Channel Wheel (CC 60)
-            if cc == 60 {
-                let delta = (val & 0x40) != 0 ? -Int(val & 0x3F) : Int(val & 0x3F)
-                handleChannelWheelRotation(delta: delta)
-                return
-            }
-        }
+                // V-Pots (CC 16..23)
+                if cc >= 16 && cc <= 23 {
+                    let slot = Int(cc - 16)
+                    let delta = (val & 0x40) != 0 ? -Int(val & 0x3F) : Int(val & 0x3F)
 
-        // Note On / Off (Buttons)
-        if (status & 0xF0) == 0x90 || (status & 0xF0) == 0x80 {
-            let isDown = ((status & 0xF0) == 0x90) && (bytes[2] > 0)
-            let note = Int(bytes[1])
-            bridgeLog("[MCU] Button: note=\(note) (0x\(String(format: "%02X", note))) is_down=\(isDown)")
-            handleNoteButton(note: note, isDown: isDown)
+                    if pluginFocusMode {
+                        handlePluginFocusVpot(slot: slot, delta: delta)
+                    } else if sendsFocusMode {
+                        handleSendsFocusVpot(slot: slot, delta: delta)
+                    } else if !preampFocusMode {
+                        let chId = bankOffset + slot
+                        if let ch = uad.channels[chId] {
+                            let newPan = max(-1.0, min(1.0, ch.pan + Double(delta) * 0.02))
+                            uad.setPan(chId: chId, pan: newPan)
+                        }
+                    }
+                } else if cc == 60 { // Jog Wheel / Channel Wheel (CC 60)
+                    let delta = (val & 0x40) != 0 ? -Int(val & 0x3F) : Int(val & 0x3F)
+                    handleChannelWheelRotation(delta: delta)
+                }
+                i += 3
+            } else if msgType == 0x90 || msgType == 0x80 { // Note On / Off (3 bytes: 0x90/0x80, Note, Vel)
+                guard i + 2 < bytes.count else { break }
+                let isDown = (msgType == 0x90) && (bytes[i + 2] > 0)
+                let note = Int(bytes[i + 1])
+                bridgeLog("[MCU] Button: note=\(note) (0x\(String(format: "%02X", note))) is_down=\(isDown)")
+                handleNoteButton(note: note, isDown: isDown)
+                i += 3
+            } else if msgType == 0xC0 || msgType == 0xD0 { // Program change / Channel Pressure (2 bytes)
+                guard i + 1 < bytes.count else { break }
+                i += 2
+            } else {
+                // Unknown / out of sync byte, advance by 1
+                i += 1
+            }
         }
     }
 
@@ -885,6 +904,12 @@ public final class MCUEngine {
             return
         }
 
+        // SSL UF8 Wheel Active / Touch Strobe: Note 83 (0x53)
+        // Must absorb so wheel rotation never falsely triggers AI Co-Producer!
+        if note == 83 {
+            return
+        }
+
         guard isDown else { return }
 
         // Any button press cancels wheel press detection timer
@@ -913,8 +938,8 @@ public final class MCUEngine {
             return
         }
 
-        // FINE Button (Notes 83 & 70) -> AI Studio Co-Producer
-        if note == 83 || note == 70 {
+        // FINE / SHIFT Button (Note 70 / 0x46) -> AI Studio Co-Producer
+        if note == 70 {
             auditor.handleFineButton()
             return
         }

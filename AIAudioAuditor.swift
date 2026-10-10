@@ -100,8 +100,7 @@ public final class AIAudioAuditor {
         lock.unlock()
 
         bridgeLog("[AI Auditor] Started AI listening across 32 channels. Waiting for user to press FINE to stop...")
-        mcu?.sendMIDI([0x90, 83, 0x7F]) // Illuminate FINE key (Note 83)
-        mcu?.sendMIDI([0x90, 70, 0x7F])
+        mcu?.sendMIDI([0x90, 70, 0x7F]) // Illuminate FINE key LED (Note 70)
         mcu?.showTempHUD(text: ">>> GEMINI AI [ALPHA]: LISTENING (PRESS FINE TO STOP) <<<", duration: 6.0)
         voice.speak("AI Co-Producer listening across 32 channels. Play your mix, then press Fine to stop listening.")
     }
@@ -135,8 +134,7 @@ public final class AIAudioAuditor {
         lock.unlock()
 
         bridgeLog("[AI Auditor] Exited AI Studio session.")
-        mcu?.sendMIDI([0x90, 83, 0x00]) // Turn off FINE key LED (Note 83)
-        mcu?.sendMIDI([0x90, 70, 0x00])
+        mcu?.sendMIDI([0x90, 70, 0x00]) // Turn off FINE key LED (Note 70)
         mcu?.showTempHUD(text: ">>> EXITED AI MODE [ALPHA] <<<", duration: 1.2)
         voice.speak("Exited AI Alpha session. Main mix.")
         mcu?.refreshMainMixSurface()

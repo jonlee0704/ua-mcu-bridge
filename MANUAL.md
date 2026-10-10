@@ -345,7 +345,7 @@ Pressing the **`PLUG-IN`** button (`Note 43`) opens the **Tactile Plugin Inspect
 > [!NOTE]
 > **Alpha Development Notice:** The AI Studio Co-Producer is currently in early, experimental Alpha stage. Diagnostic heuristics and voice feedback are actively evolving.
 
-Triggered via the **`FINE` key (`Note 83` / `0x53`)**, the AI Studio Co-Producer acts as your personal automated assistant sound engineer, inspecting your entire Apollo session for audio pitfalls.
+Triggered via the **`FINE` key (`Note 70` / `0x46`)** or via the macOS Menu Bar app item (**Trigger AI Co-Producer Session**), the AI Studio Co-Producer acts as your personal automated assistant sound engineer, inspecting your entire Apollo session for audio pitfalls. Note 83 is automatically absorbed as the SSL UF8 rotary encoder touch strobe so turning the wheel never falsely triggers AI listening.
 
 ```
                      ┌───────────────┐
@@ -471,7 +471,7 @@ The native status item (`slider.vertical.3`) in your top menu bar provides compl
 | **FLIP Button** | 50 | `0x32` | Bidirectional | Single: Return to Main Mix; Double: Snap to Ch 1–8 |
 | **Page Navigation** | 48/49, 44/45, 104/105 | Various | Inbound | Jumps active bank in 8-channel pages |
 | **Bank Navigation** | 98/99 | `0x62`/`0x63` | Inbound | Nudges bank by 1 single track step |
-| **FINE Button (AI)** | 83 / 70 | `0x53` / `0x46` | Bidirectional | **Launches AI Studio Co-Producer** + tally LED |
+| **FINE Button (AI)** | 70 | `0x46` | Bidirectional | **Launches AI Studio Co-Producer** + tally LED (Note 83 absorbed as wheel strobe) |
 | **UP Arrow** | 96 | `0x60` | Inbound | **AI YES / Apply Fix** (or Re-test when complete) |
 | **DOWN Arrow** | 97 | `0x61` | Inbound | **AI NO / Skip Suggestion** |
 | **LEFT Arrow** | 98 | `0x62` | Inbound | **AI Previous Finding / Repeat** |
