@@ -1406,6 +1406,7 @@ public final class MCUEngine {
         if sendsFocusMode {
             if let tch = targetCh, tch != sendsFocusChannel, uad.channels[tch] != nil {
                 sendsFocusChannel = tch
+                uad.activeSendsChannel = tch
                 if bankOffset <= tch && tch < bankOffset + 8 {
                     selectedSlot = tch - bankOffset
                 } else {
@@ -1427,6 +1428,7 @@ public final class MCUEngine {
             }
 
             sendsFocusMode = false
+            uad.activeSendsChannel = nil
             sendFlipLed(false)
             sendMIDI([0x90, 41, 0x00]) // SEND LED off
             showTempHUD(text: ">>> EXIT SENDS MODE <<<", duration: 1.2)
@@ -1441,6 +1443,7 @@ public final class MCUEngine {
 
             sendsFocusMode = true
             sendsFocusChannel = candidate
+            uad.activeSendsChannel = candidate
             if bankOffset <= candidate && candidate < bankOffset + 8 {
                 selectedSlot = candidate - bankOffset
             } else {
@@ -1530,6 +1533,7 @@ public final class MCUEngine {
         let newIdx = max(0, min(chKeys.count - 1, currIdx + delta))
         if newIdx != currIdx {
             sendsFocusChannel = chKeys[newIdx]
+            uad.activeSendsChannel = sendsFocusChannel
             if bankOffset <= sendsFocusChannel && sendsFocusChannel < bankOffset + 8 {
                 selectedSlot = sendsFocusChannel - bankOffset
             } else {
@@ -1697,6 +1701,17 @@ public final class MCUEngine {
     }
 
     private func handleUADChange(eventType: String, chId: Int, value: Any?) {
+        if eventType == "send_meter" || eventType == "send_meter_peak" {
+            if sendsFocusMode && chId == sendsFocusChannel {
+                if let (sIdx, db, isClip) = value as? (Int, Double, Bool) {
+                    if sIdx >= 0 && sIdx < 6 {
+                        sendMeterLevel(slot: sIdx, db: db, isClip: isClip)
+                    }
+                }
+            }
+            return
+        }
+
         if eventType == "meter" || eventType == "meter_peak" {
             let chObj = uad.channels[chId]
             let isClip = chObj?.meterClip ?? false
@@ -1713,7 +1728,29 @@ public final class MCUEngine {
                 }
             } else if sendsFocusMode {
                 if chId == sendsFocusChannel {
-                    sendMeterLevel(slot: 6, db: dbVal, isClip: isClip)
+                    let isAux = (chObj?.chType == "aux")
+                    for slot in 0..<6 {
+                        if isAux && slot < 2 {
+                            sendMeterLevel(slot: slot, db: -144.0, isClip: false)
+                        } else if let send = chObj?.sends[slot] {
+                            if send.bypass || send.gain <= 0.0001 {
+                                sendMeterLevel(slot: slot, db: -144.0, isClip: false)
+                            } else {
+                                // Live send audio level: combines direct send meter telemetry with gain-scaled input
+                                let liveSendDb = (send.meterLevel > -76.0) ? send.meterLevel : (dbVal + send.gainDb)
+                                let liveSendClip = send.meterClip || isClip || (liveSendDb >= 0.0)
+                                sendMeterLevel(slot: slot, db: liveSendDb, isClip: liveSendClip)
+                            }
+                        } else {
+                            sendMeterLevel(slot: slot, db: dbVal, isClip: isClip)
+                        }
+                    }
+                    // Slot 6: Output Fader Level
+                    let outDb = (chObj?.mute == true) ? -144.0 : dbVal
+                    sendMeterLevel(slot: 6, db: outDb, isClip: (chObj?.mute == true) ? false : isClip)
+
+                    // Slot 7: Output Pan
+                    sendMeterLevel(slot: 7, db: outDb, isClip: (chObj?.mute == true) ? false : isClip)
                 }
             } else if preampFocusMode {
                 if chId == preampFocusChannel {
@@ -1733,14 +1770,6 @@ public final class MCUEngine {
         }
 
         if eventType == "monitor_meter" || eventType == "monitor_meter_peak" {
-            let lvlVal = max(uad.monitorMeterLevelL, uad.monitorMeterLevelR)
-            let peakVal = max(uad.monitorMeterPeakL, uad.monitorMeterPeakR)
-            let dbVal = (lvlVal > -76.0) ? lvlVal : peakVal
-            let isClip = uad.monitorMeterClip
-
-            if sendsFocusMode {
-                sendMeterLevel(slot: 6, db: dbVal, isClip: isClip)
-            }
             return
         }
 

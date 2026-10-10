@@ -51,12 +51,27 @@ public final class MockMIDIOutput {
         }
         return nil
     }
+
+    public func lastMeterLevel(slot: Int) -> UInt8? {
+        for pkt in sentPackets.reversed() {
+            if pkt.count == 2 && pkt[0] == 0xD0 && (Int(pkt[1]) >> 4) == slot {
+                return pkt[1] & 0x0F
+            }
+        }
+        return nil
+    }
 }
 
 public final class TestAudioFixture {
     public static func makeMCUEngine(channelCount: Int = 32) -> (mcu: MCUEngine, uad: UADClient, mockMidi: MockMIDIOutput) {
         let uad = UADClient()
-        uad.channels = makeChannels(count: channelCount)
+        let chs = makeChannels(count: channelCount)
+        uad.channels = chs
+        for (_, ch) in chs {
+            if !ch.devPath.isEmpty {
+                uad.pathToChannel[ch.devPath] = ch
+            }
+        }
         let mockMidi = MockMIDIOutput()
         let mcu = MCUEngine(uadClient: uad, sendMIDIFn: { mockMidi.send($0) })
         mcu.voice.isEnabled = false

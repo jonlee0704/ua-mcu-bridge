@@ -55,6 +55,9 @@ public final class UADSend {
     public var gainDb: Double       // dB (-144.0 to +12.0)
     public var pan: Double          // -1.0 to 1.0
     public var bypass: Bool
+    public var meterLevel: Double   // dBFS (-77.0 to 0.0)
+    public var meterPeak: Double
+    public var meterClip: Bool
 
     public var gainTapered: Double {
         get { return gain }
@@ -68,6 +71,9 @@ public final class UADSend {
         self.gainDb = -144.0
         self.pan = 0.0
         self.bypass = false
+        self.meterLevel = -77.0
+        self.meterPeak = -77.0
+        self.meterClip = false
     }
 }
 

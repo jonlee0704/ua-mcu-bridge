@@ -51,6 +51,7 @@ public final class UADClient {
 
     // Active Bank for Metering
     public var activeBankChannels: [Int] = Array(0..<8)
+    public var activeSendsChannel: Int? = nil
     private var meterTimer: DispatchSourceTimer?
 
     // Callbacks: (eventType, chId, value)
@@ -217,6 +218,15 @@ public final class UADClient {
         for p in monitorPaths {
             cmds.append("get /devices/\(p.devId)/outputs/\(p.outId)/meters/0")
             cmds.append("get /devices/\(p.devId)/outputs/\(p.outId)/meters/1")
+        }
+
+        // 3. Poll active sends in CUE/SENDS focus mode
+        if let sChId = activeSendsChannel, let ch = channels[sChId], !ch.devPath.isEmpty {
+            for sIdx in 0..<6 {
+                if ch.chType == "aux" && sIdx < 2 { continue }
+                let targetSendIdx = (ch.chType == "aux") ? (sIdx - 2) : sIdx
+                cmds.append("get \(ch.devPath)/sends/\(targetSendIdx)/meters/0")
+            }
         }
 
         guard !cmds.isEmpty else { return }
@@ -435,6 +445,49 @@ public final class UADClient {
                 onChannelChange?("monitor_meter_peak", -1, peakMax)
                 onChannelChange?("monitor_meter", -1, lvlMax)
             }
+            return
+        }
+
+        // Send meter updates: /devices/{d}/{inputs|auxs}/{i}/sends/{s}/meters/{m}
+        if parts.count == 8, parts[0] == "devices", (parts[2] == "inputs" || parts[2] == "auxs"), parts[4] == "sends", parts[6] == "meters" {
+            let base = "/devices/\(parts[1])/\(parts[2])/\(parts[3])"
+            guard let ch = pathToChannel[base], let rawSIdx = Int(parts[5]) else { return }
+            let sIdx = (ch.chType == "aux") ? (rawSIdx + 2) : rawSIdx
+            let send = ch.sends[sIdx] ?? UADSend(index: sIdx)
+            if let dict = data as? [String: Any], let props = dict["properties"] as? [String: Any] {
+                if let lvl = toDouble((props["MeterLevel"] as? [String: Any])?["value"]) {
+                    send.meterLevel = lvl
+                }
+                if let peak = toDouble((props["MeterPeakLevel"] as? [String: Any])?["value"]) {
+                    send.meterPeak = peak
+                }
+                if let clip = (props["MeterClip"] as? [String: Any])?["value"] as? Bool {
+                    send.meterClip = clip
+                }
+                ch.sends[sIdx] = send
+                onChannelChange?("send_meter", ch.id, (sIdx, send.meterLevel, send.meterClip))
+                onChannelChange?("send_meter_peak", ch.id, (sIdx, send.meterPeak, send.meterClip))
+            }
+            return
+        }
+
+        // Send meter property updates: /devices/{d}/{inputs|auxs}/{i}/sends/{s}/meters/{m}/{prop}/value
+        if parts.count == 10, parts[0] == "devices", (parts[2] == "inputs" || parts[2] == "auxs"), parts[4] == "sends", parts[6] == "meters", parts[9] == "value" {
+            let base = "/devices/\(parts[1])/\(parts[2])/\(parts[3])"
+            guard let ch = pathToChannel[base], let rawSIdx = Int(parts[5]) else { return }
+            let sIdx = (ch.chType == "aux") ? (rawSIdx + 2) : rawSIdx
+            let send = ch.sends[sIdx] ?? UADSend(index: sIdx)
+            let prop = parts[8]
+            if prop == "MeterLevel", let lvl = toDouble(data) {
+                send.meterLevel = lvl
+                onChannelChange?("send_meter", ch.id, (sIdx, send.meterLevel, send.meterClip))
+            } else if prop == "MeterPeakLevel", let peak = toDouble(data) {
+                send.meterPeak = peak
+                onChannelChange?("send_meter_peak", ch.id, (sIdx, send.meterPeak, send.meterClip))
+            } else if prop == "MeterClip", let clip = data as? Bool {
+                send.meterClip = clip
+            }
+            ch.sends[sIdx] = send
             return
         }
 
@@ -925,6 +978,9 @@ public final class UADClient {
                     sendCommand("subscribe \(devPath)/sends/\(sIdx)/GainTapered/value")
                     sendCommand("subscribe \(devPath)/sends/\(sIdx)/Pan/value")
                     sendCommand("subscribe \(devPath)/sends/\(sIdx)/Bypass/value")
+                    sendCommand("subscribe \(devPath)/sends/\(sIdx)/meters/0/MeterLevel/value")
+                    sendCommand("subscribe \(devPath)/sends/\(sIdx)/meters/0/MeterPeakLevel/value")
+                    sendCommand("subscribe \(devPath)/sends/\(sIdx)/meters/0/MeterClip/value")
                 }
                 for effIdx in 0..<8 {
                     sendCommand("get \(devPath)/effects/\(effIdx)")
@@ -936,6 +992,9 @@ public final class UADClient {
                     sendCommand("get \(devPath)/sends/\(cIdx)")
                     sendCommand("subscribe \(devPath)/sends/\(cIdx)/GainTapered/value")
                     sendCommand("subscribe \(devPath)/sends/\(cIdx)/Bypass/value")
+                    sendCommand("subscribe \(devPath)/sends/\(cIdx)/meters/0/MeterLevel/value")
+                    sendCommand("subscribe \(devPath)/sends/\(cIdx)/meters/0/MeterPeakLevel/value")
+                    sendCommand("subscribe \(devPath)/sends/\(cIdx)/meters/0/MeterClip/value")
                 }
                 for effIdx in 0..<4 {
                     sendCommand("get \(devPath)/effects/\(effIdx)")

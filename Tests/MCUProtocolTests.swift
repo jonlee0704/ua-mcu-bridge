@@ -20,6 +20,7 @@ public final class MCUProtocolTests {
         testFineButtonAiCycle()
         testFlipButtonReturnAndHome()
         testFaderTouchSensorsAbsorbed()
+        testCueSendsModeLevelMeters()
     }
 
     /// P0 TEST: Hardware PAGE Buttons (< PAGE = Note 48, PAGE > = Note 49)
@@ -276,6 +277,126 @@ public final class MCUProtocolTests {
 
             assertEqual(mcu.bankOffset, initialBank, "Fader touch sensors must NEVER alter bankOffset")
             assertEqual(uad.monitorLevelDb, initialMonitorDb, "Fader touch sensors must NEVER alter monitor volume")
+        }
+    }
+
+    /// P0 TEST: CUE/SENDS Mode Level Meters Across All Slots 0..7
+    public static func testCueSendsModeLevelMeters() {
+        runTest("P0: CUE/SENDS mode level meters drive slots 0..5 (Sends), slot 6 (Output), slot 7 (Pan)") {
+            let (mcu, uad, mockMidi) = TestAudioFixture.makeMCUEngine(channelCount: 16)
+
+            // Enter CUE/SENDS mode (Note 41 = SEND button)
+            mcu.handleMidiBytes([0x90, 41, 0x7F])
+            mcu.handleMidiBytes([0x90, 41, 0x00])
+            assertTrue(mcu.sendsFocusMode, "Must enter CUE/SENDS focus mode")
+            assertEqual(mcu.sendsFocusChannel, 0, "Focused channel must be channel 0")
+            assertEqual(uad.activeSendsChannel, 0, "activeSendsChannel must track channel 0")
+
+            guard let ch0 = uad.channels[0] else {
+                assertTrue(false, "Channel 0 must exist")
+                return
+            }
+
+            // Configure Send parameters on Channel 0:
+            // Send 0 (AUX 1): 0.0 dB (unity, tapered ~0.7818)
+            ch0.sends[0]?.gain = 0.7818
+            ch0.sends[0]?.gainDb = 0.0
+            ch0.sends[0]?.bypass = false
+
+            // Send 1 (AUX 2): -6.0 dB
+            ch0.sends[1]?.gain = 0.65
+            ch0.sends[1]?.gainDb = -6.0
+            ch0.sends[1]?.bypass = false
+
+            // Send 2 (HP 1): 0.0 dB (unity)
+            ch0.sends[2]?.gain = 0.7818
+            ch0.sends[2]?.gainDb = 0.0
+            ch0.sends[2]?.bypass = false
+
+            // Send 3 (HP 2): -12.0 dB
+            ch0.sends[3]?.gain = 0.56
+            ch0.sends[3]?.gainDb = -12.0
+            ch0.sends[3]?.bypass = false
+
+            // Send 4 (CUE 3): Bypassed
+            ch0.sends[4]?.gain = 0.7818
+            ch0.sends[4]?.gainDb = 0.0
+            ch0.sends[4]?.bypass = true
+
+            // Send 5 (CUE 4): Down (-144 dB)
+            ch0.sends[5]?.gain = 0.0
+            ch0.sends[5]?.gainDb = -144.0
+            ch0.sends[5]?.bypass = false
+
+            // Clear MIDI output packet recorder
+            mockMidi.clear()
+
+            // Feed channel audio into Channel 0 (-6.0 dBFS)
+            uad.simulateInboundFrame(path: "/devices/0/inputs/0/meters/0", data: [
+                "properties": [
+                    "MeterLevel": ["value": -6.0],
+                    "MeterPeakLevel": ["value": -6.0],
+                    "MeterClip": ["value": false]
+                ]
+            ])
+
+            // Verify active sends show dynamic meter levels:
+            // Slot 0 (AUX 1): -6 dB audio + 0 dB send = -6 dBFS -> meter > 0
+            let m0 = mockMidi.lastMeterLevel(slot: 0)
+            assertNotNil(m0, "Slot 0 (AUX 1 send) must receive meter packets")
+            assertTrue(m0 != nil && m0! > 0, "Slot 0 meter level must be active (> 0)")
+
+            // Slot 1 (AUX 2): -6 dB audio - 6 dB send = -12 dBFS -> meter > 0
+            let m1 = mockMidi.lastMeterLevel(slot: 1)
+            assertNotNil(m1, "Slot 1 (AUX 2 send) must receive meter packets")
+            assertTrue(m1 != nil && m1! > 0, "Slot 1 meter level must be active (> 0)")
+
+            // Slot 2 (HP 1): -6 dB audio + 0 dB send = -6 dBFS -> meter > 0
+            let m2 = mockMidi.lastMeterLevel(slot: 2)
+            assertNotNil(m2, "Slot 2 (HP 1 send) must receive meter packets")
+            assertTrue(m2 != nil && m2! > 0, "Slot 2 meter level must be active (> 0)")
+
+            // Slot 3 (HP 2): -6 dB audio - 12 dB send = -18 dBFS -> meter > 0
+            let m3 = mockMidi.lastMeterLevel(slot: 3)
+            assertNotNil(m3, "Slot 3 (HP 2 send) must receive meter packets")
+            assertTrue(m3 != nil && m3! > 0, "Slot 3 meter level must be active (> 0)")
+
+            // Slot 4 (CUE 3 bypassed): must be 0 (silent)
+            let m4 = mockMidi.lastMeterLevel(slot: 4)
+            assertNotNil(m4, "Slot 4 (CUE 3 bypassed) must receive meter packet")
+            assertEqual(m4, 0, "Slot 4 bypassed send must have meter level 0")
+
+            // Slot 5 (CUE 4 down): must be 0 (silent)
+            let m5 = mockMidi.lastMeterLevel(slot: 5)
+            assertNotNil(m5, "Slot 5 (CUE 4 at 0) must receive meter packet")
+            assertEqual(m5, 0, "Slot 5 at -oo dB must have meter level 0")
+
+            // Slot 6 (OUTPUT): tracks channel output -> meter > 0
+            let m6 = mockMidi.lastMeterLevel(slot: 6)
+            assertNotNil(m6, "Slot 6 (OUTPUT) must receive meter packets")
+            assertTrue(m6 != nil && m6! > 0, "Slot 6 meter level must be active (> 0)")
+
+            // Slot 7 (PAN): tracks channel pan/balance -> meter > 0
+            let m7 = mockMidi.lastMeterLevel(slot: 7)
+            assertNotNil(m7, "Slot 7 (PAN) must receive meter packets")
+            assertTrue(m7 != nil && m7! > 0, "Slot 7 meter level must be active (> 0)")
+
+            // Test hardware direct send meter message
+            uad.simulateInboundFrame(path: "/devices/0/inputs/0/sends/0/meters/0", data: [
+                "properties": [
+                    "MeterLevel": ["value": -2.0],
+                    "MeterPeakLevel": ["value": -2.0],
+                    "MeterClip": ["value": false]
+                ]
+            ])
+            let m0Direct = mockMidi.lastMeterLevel(slot: 0)
+            assertTrue(m0Direct != nil && m0Direct! >= (m0 ?? 0), "Hardware send meter packet must update Slot 0 meter")
+
+            // Exit CUE/SENDS mode
+            mcu.handleMidiBytes([0x90, 41, 0x7F])
+            mcu.handleMidiBytes([0x90, 41, 0x00])
+            assertFalse(mcu.sendsFocusMode, "Must exit CUE/SENDS mode")
+            assertEqual(uad.activeSendsChannel, nil, "activeSendsChannel must be cleared on exit")
         }
     }
 }
