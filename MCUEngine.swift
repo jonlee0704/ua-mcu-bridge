@@ -892,27 +892,19 @@ public final class MCUEngine {
         wheelPressTimer?.cancel()
         wheelPressTimer = nil
 
-        // CHANNEL ROTARY WHEEL (Notes 46 and 47)
-        if note == 46 || note == 47 {
+        // CHANNEL ROTARY WHEEL (Notes 46, 47, 48, 49)
+        // Master rotary wheel controls ONLY Apollo Master Monitor Volume!
+        // Never step channels/banks, never move motorized faders, never change track fader dB!
+        if note == 46 || note == 47 || note == 48 || note == 49 {
             wheelRotatedDuringPress = true
             wheelPressMuteTriggered = true
-            let dir = (note == 46) ? -1 : 1
-            if wheelMode == "monitor" {
-                _ = uad.nudgeMonitorDb(deltaDb: Double(dir) * 1.0)
-                let dispStr = !uad.monitorMute ? String(format: "MONITOR: %+.1f dB", uad.monitorLevelDb) : "MONITOR: MUTED"
-                showTempHUD(text: ">>> \(dispStr) <<<", duration: 1.2)
-                let spkStr = !uad.monitorMute ? "Monitor \(UADCurve.formatDbSpeech(uad.monitorLevelDb))" : "Muted"
-                voice.speakDebounced(spkStr, delay: 0.35)
-                bridgeLog("[MCU] Channel Wheel Rotation (Note \(note)) -> Monitor: \(String(format: "%.1f", uad.monitorLevelDb)) dB (Mute=\(uad.monitorMute))")
-            } else {
-                if sendsFocusMode {
-                    stepSendsChannel(delta: dir)
-                } else if pluginFocusMode {
-                    stepPluginChannel(delta: dir)
-                } else {
-                    stepBank(delta: dir)
-                }
-            }
+            let dir = (note == 46 || note == 48) ? -1 : 1
+            _ = uad.nudgeMonitorDb(deltaDb: Double(dir) * 1.0)
+            let dispStr = !uad.monitorMute ? String(format: "MONITOR: %+.1f dB", uad.monitorLevelDb) : "MONITOR: MUTED"
+            showTempHUD(text: ">>> \(dispStr) <<<", duration: 1.2)
+            let spkStr = !uad.monitorMute ? "Monitor \(UADCurve.formatDbSpeech(uad.monitorLevelDb))" : "Muted"
+            voice.speakDebounced(spkStr, delay: 0.35)
+            bridgeLog("[MCU] Channel Wheel Rotation (Note \(note)) -> Monitor: \(String(format: "%.1f", uad.monitorLevelDb)) dB (Mute=\(uad.monitorMute))")
             return
         }
 
@@ -1003,9 +995,9 @@ public final class MCUEngine {
             }
         }
 
-        // Hardware PAGE buttons: Notes 48, 49, 44, 45, 104, 105
-        if [48, 49, 44, 45, 104, 105].contains(note) {
-            let dir = (note == 48 || note == 44 || note == 104) ? -1 : 1
+        // Hardware PAGE buttons: Notes 44, 45 (Bank by 8 tracks)
+        if note == 44 || note == 45 {
+            let dir = (note == 44) ? -1 : 1
             if sendsFocusMode {
                 stepSendsChannel(delta: dir)
             } else if pluginFocusMode {
@@ -1656,22 +1648,13 @@ public final class MCUEngine {
     }
 
     private func handleChannelWheelRotation(delta: Int) {
-        if wheelMode == "monitor" {
-            _ = uad.nudgeMonitorDb(deltaDb: Double(delta) * 1.0)
-            let dispStr = !uad.monitorMute ? String(format: "MONITOR: %+.1f dB", uad.monitorLevelDb) : "MONITOR: MUTED"
-            showTempHUD(text: ">>> \(dispStr) <<<", duration: 1.2)
-            let spkStr = !uad.monitorMute ? "Monitor \(UADCurve.formatDbSpeech(uad.monitorLevelDb))" : "Muted"
-            voice.speakDebounced(spkStr, delay: 0.35)
-            bridgeLog("[MCU] Channel Wheel CC 60 -> Monitor: \(String(format: "%.1f", uad.monitorLevelDb)) dB (Mute=\(uad.monitorMute))")
-        } else {
-            if sendsFocusMode {
-                stepSendsChannel(delta: delta > 0 ? 1 : -1)
-            } else if pluginFocusMode {
-                stepPluginChannel(delta: delta > 0 ? 1 : -1)
-            } else {
-                stepBank(delta: delta > 0 ? 1 : -1)
-            }
-        }
+        // Channel Wheel (CC 60) controls ONLY Master Monitor Volume!
+        _ = uad.nudgeMonitorDb(deltaDb: Double(delta) * 1.0)
+        let dispStr = !uad.monitorMute ? String(format: "MONITOR: %+.1f dB", uad.monitorLevelDb) : "MONITOR: MUTED"
+        showTempHUD(text: ">>> \(dispStr) <<<", duration: 1.2)
+        let spkStr = !uad.monitorMute ? "Monitor \(UADCurve.formatDbSpeech(uad.monitorLevelDb))" : "Muted"
+        voice.speakDebounced(spkStr, delay: 0.35)
+        bridgeLog("[MCU] Channel Wheel CC 60 -> Monitor: \(String(format: "%.1f", uad.monitorLevelDb)) dB (Mute=\(uad.monitorMute))")
     }
 
     private func handleUADChange(eventType: String, chId: Int, value: Any?) {

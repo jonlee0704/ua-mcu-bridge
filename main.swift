@@ -332,17 +332,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // 4. Channel Wheel Mode Submenu
         let wheelMenu = NSMenu(title: "Wheel Mode")
-        let monItem = NSMenuItem(title: "Apollo Master Monitor Volume (Default)", action: #selector(handleWheelMode(_:)), keyEquivalent: "")
+        let monItem = NSMenuItem(title: "Apollo Master Monitor Volume (Dedicated)", action: #selector(handleWheelMode(_:)), keyEquivalent: "")
         monItem.tag = 1
         monItem.target = self
-        monItem.state = (config.wheelMode == "monitor") ? .on : .off
+        monItem.state = .on
         wheelMenu.addItem(monItem)
-
-        let trackItem = NSMenuItem(title: "Track Navigation (1-Track Step)", action: #selector(handleWheelMode(_:)), keyEquivalent: "")
-        trackItem.tag = 2
-        trackItem.target = self
-        trackItem.state = (config.wheelMode == "channel") ? .on : .off
-        wheelMenu.addItem(trackItem)
 
         let wheelParentItem = NSMenuItem(title: "Channel Wheel Mode", action: nil, keyEquivalent: "")
         wheelParentItem.submenu = wheelMenu
@@ -509,15 +503,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func handleWheelMode(_ sender: NSMenuItem) {
-        if sender.tag == 1 {
-            config.wheelMode = "monitor"
-            mcuEngine.wheelMode = "monitor"
-            VoiceAnnouncer.shared.speak("Wheel set to Monitor Volume")
-        } else {
-            config.wheelMode = "channel"
-            mcuEngine.wheelMode = "channel"
-            VoiceAnnouncer.shared.speak("Wheel set to Track Navigation")
-        }
+        config.wheelMode = "monitor"
+        mcuEngine.wheelMode = "monitor"
+        VoiceAnnouncer.shared.speak("Wheel locked to Monitor Volume")
         ConfigManager.shared.save(config)
         buildMenu()
     }
