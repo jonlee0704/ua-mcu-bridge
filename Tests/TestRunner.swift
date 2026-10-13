@@ -24,6 +24,7 @@ public struct TestRunner {
         UADClientTests.runAll()
         UADCurveTests.runAll()
         AIAudioAuditorTests.runAll()
+        AIChatEngineTests.runAll()
 
         let elapsed = Date().timeIntervalSince(startTime)
         let total = TestContext.shared.totalTests

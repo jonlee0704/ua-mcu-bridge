@@ -32,11 +32,22 @@ def render_dashboard(engine: MCUEngine, uad: UADClient, midi: CoreMIDIAdapter, p
     bank_start = engine.bank_offset + 1
     bank_end = min(total_ch, engine.bank_offset + 8) if total_ch > 0 else engine.bank_offset + 8
 
-    if engine.preamp_focus_mode:
+    if getattr(engine, 'plugin_focus_mode', False):
+        f_ch = uad.channels.get(engine.plugin_focus_channel)
+        f_name = f_ch.name.strip() if f_ch else f"Channel {engine.plugin_focus_channel + 1}"
+        slots = f_ch.get_plugin_slots() if f_ch else []
+        curr_idx = getattr(engine, 'plugin_focus_slot_idx', 0)
+        curr_label = slots[curr_idx]["label"] if (slots and curr_idx < len(slots)) else "Plugin"
+        mode_label = f"\033[93mPLUGIN MODE: {f_name} ({curr_label})\033[0m"
+    elif engine.preamp_focus_mode:
         f_ch = uad.channels.get(engine.preamp_focus_channel)
         f_name = f_ch.name.strip() if f_ch else f"Channel {engine.preamp_focus_channel + 1}"
         f_uni = f" [{f_ch.preamp.unison_plugin_name}]" if f_ch and f_ch.preamp.unison_plugin_name else ""
         mode_label = f"\033[92mPREAMP FOCUS: {f_name}{f_uni}\033[0m"
+    elif getattr(engine, 'sends_focus_mode', False):
+        f_ch = uad.channels.get(engine.sends_focus_channel)
+        f_name = f_ch.name.strip() if f_ch else f"Channel {engine.sends_focus_channel + 1}"
+        mode_label = f"\033[95mSENDS FOCUS: {f_name}\033[0m"
     elif engine.active_send_idx is None:
         mode_label = "\033[96mMAIN MIX (Volumes)\033[0m"
     else:
@@ -48,11 +59,45 @@ def render_dashboard(engine: MCUEngine, uad: UADClient, midi: CoreMIDIAdapter, p
     wheel_label = "\033[95mMonitor Vol\033[0m" if wheel_mode == "monitor" else "\033[92mTrack Nav (1-CH)\033[0m"
     voice_label = "\033[92mON (Speech)\033[0m" if getattr(engine, 'voice', None) and engine.voice.is_enabled() else "\033[90mOFF\033[0m"
 
+    num_devs = len(getattr(uad, 'devices', {}))
+    dev_str = f" across {num_devs} devices" if num_devs > 1 else ""
     print(f" CoreMIDI: {midi_stat:<35} | UAD Mixer: {uad_stat}")
-    print(f" Active Bank: Channels {bank_start} - {bank_end} (Total: {total_ch}) | Mode: {mode_label} | Wheel: {wheel_label} | Voice: {voice_label}")
+    print(f" Active Bank: Channels {bank_start} - {bank_end} (Total: {total_ch}{dev_str}) | Mode: {mode_label} | Wheel: {wheel_label} | Voice: {voice_label}")
     print("-----------------------------------------------------------------------------------------")
 
-    if engine.preamp_focus_mode:
+    if getattr(engine, 'plugin_focus_mode', False):
+        f_ch = uad.channels.get(engine.plugin_focus_channel)
+        print(" Slot | Plug-in / Option | Power / State    | Status Readout  | Description / Accessibility Action   ")
+        print("------+------------------+------------------+-----------------+--------------------------------------")
+        if f_ch:
+            slots = f_ch.get_plugin_slots()
+            curr_slot_idx = getattr(engine, 'plugin_focus_slot_idx', 0)
+            for idx, slot_info in enumerate(slots):
+                is_selected = (idx == curr_slot_idx)
+                sel_prefix = ">" if is_selected else " "
+                if slot_info["type"] == "rec_mon":
+                    is_mon = f_ch.record_pre_effects
+                    p_name = "UAD REC / MON"
+                    p_ctrl = "\033[96m [ MONITOR ] \033[0m" if is_mon else "\033[91m [ RECORD ] \033[0m"
+                    p_val = "DRY MON" if is_mon else "PRINT WET"
+                    p_desc = "Key 8 / Fader / SEL toggles UAD REC (wet) vs UAD MON (dry)"
+                else:
+                    eff = slot_info.get("effect")
+                    has_fx = bool(eff and eff.name and eff.name.strip() and eff.name != "None")
+                    if has_fx:
+                        p_clean = engine.clean_plugin_name(eff.name)
+                        p_ctrl = "\033[92m [ ACTIVE ] \033[0m" if eff.power else "\033[90m [ BYPASS ] \033[0m"
+                        param_count = len(eff.parameters)
+                        p_val = f"{param_count} PARAMS" if param_count else "ACTIVE"
+                        p_desc = f"Key {idx + 1} focuses plug-in values across 8 physical strips"
+                        p_name = f"{slot_info['label']}: {p_clean}"
+                    else:
+                        p_name = f"{slot_info['label']}: Empty"
+                        p_ctrl = " [  EMPTY ] "
+                        p_val = "EMPTY"
+                        p_desc = f"Empty {slot_info['label'].lower()} slot"
+                print(f" {sel_prefix}{idx + 1}   | {p_name:<16} | {p_ctrl:<16} | {p_val:^15} | {p_desc}")
+    elif engine.preamp_focus_mode:
         f_ch = uad.channels.get(engine.preamp_focus_channel)
         pre = f_ch.preamp if f_ch else None
         print(" Slot | Parameter Name  | Control / State  | Hardware Value  | Description / Accessibility Action   ")
@@ -70,6 +115,35 @@ def render_dashboard(engine: MCUEngine, uad: UADClient, midi: CoreMIDIAdapter, p
             ]
             for s_num, p_name, p_ctrl, p_val, p_desc in p_slots:
                 print(f"  {s_num}   | {p_name:<15} | {p_ctrl:<16} | {p_val:^15} | {p_desc}")
+    elif getattr(engine, 'sends_focus_mode', False):
+        f_ch = uad.channels.get(engine.sends_focus_channel)
+        is_aux = (getattr(f_ch, "ch_type", "input") == "aux")
+        print(" Slot | Send / Parameter | Level (tapered) | Volume dB | Live Meter (dBFS) |   Pan   |  Bypass ")
+        print("------+------------------+-----------------+-----------+-------------------+---------+---------")
+        for slot in range(8):
+            if 0 <= slot <= 5:
+                info = engine.get_send_info(slot)
+                if is_aux and slot < 2:
+                    print(f"  {slot + 1}   | {info['name']:<16} | [            ]  |    ---    |                   |   ---   |   ---   ")
+                else:
+                    send = f_ch.sends.get(slot) if f_ch else None
+                    gain = send.gain if send else 0.0
+                    gain_db = send.gain_db if send else -144.0
+                    pan = send.pan if send else 0.0
+                    byp = send.bypass if send else False
+                    fader_bar = ("#" * int(gain * 12)).ljust(12)
+                    db_str = format_db_7char(gain_db).strip()
+                    pan_str = pan_to_str(pan)
+                    byp_str = "\033[91m BYP \033[0m" if byp else "  -- "
+                    print(f"  {slot + 1}   | {info['name']:<16} | [{fader_bar}] | {db_str:^9} |                   | {pan_str:^7} | {byp_str} ")
+            elif slot == 6:
+                fader_bar = ("#" * int(f_ch.fader * 12)).ljust(12) if f_ch else (" " * 12)
+                db_str = format_db_7char(f_ch.fader_db).strip() if f_ch else " -- "
+                mute_str = "\033[91mMUTE\033[0m" if f_ch and f_ch.mute else " -- "
+                print(f"  7   | Output Level     | [{fader_bar}] | {db_str:^9} |                   |         |  {mute_str}   ")
+            elif slot == 7:
+                pan_str = pan_to_str(f_ch.pan) if f_ch else " C "
+                print(f"  8   | Track Pan        | [            ]  |           |                   | {pan_str:^7} |         ")
     else:
         print(" Slot | Channel Name | Level (tapered) | Volume dB | Live Meter (dBFS) |   Pan   |  Mute  |  Solo  ")
         print("------+--------------+-----------------+-----------+-------------------+---------+--------+--------")
@@ -98,7 +172,7 @@ def render_dashboard(engine: MCUEngine, uad: UADClient, midi: CoreMIDIAdapter, p
                     if db_val is None:
                         db_val = tapered_to_db(ch.fader)
                     db_str = format_db_7char(db_val)
-                    pan_str = pan_to_str(ch.pan)
+                    pan_str = pan_to_str(ch.pan, getattr(ch, 'pan2', None), getattr(ch, 'stereo', False))
                     mute_str = "\033[91mMUTE\033[0m" if ch.mute else " -- "
                     solo_str = "\033[93mSOLO\033[0m" if ch.solo else " -- "
 
@@ -193,11 +267,14 @@ def main():
     signal.signal(signal.SIGINT, shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
 
-    # Live dashboard refresh loop
+    # Live dashboard refresh loop (only when attached to interactive terminal)
     try:
         while True:
-            render_dashboard(engine, uad, midi, args.port)
-            time.sleep(0.5)
+            if sys.stdout.isatty():
+                render_dashboard(engine, uad, midi, args.port)
+                time.sleep(0.5)
+            else:
+                time.sleep(2.0)
     except KeyboardInterrupt:
         shutdown_handler(None, None)
 

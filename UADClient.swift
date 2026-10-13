@@ -179,13 +179,13 @@ public final class UADClient {
         processMessage(path: path, data: data)
     }
 
-    // MARK: - Real-Time 30 FPS Meter Polling
+    // MARK: - Real-Time 60 FPS Meter Polling
 
     public func startMeterPolling() {
         meterTimer?.cancel()
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        // 30 Hz -> 33 ms interval
-        timer.schedule(deadline: .now() + 0.05, repeating: .milliseconds(33))
+        // 60 Hz -> 16.6 ms interval for ultra-responsive low-latency metering
+        timer.schedule(deadline: .now() + 0.016, repeating: .milliseconds(16))
         timer.setEventHandler { [weak self] in
             self?.pollActiveMeters()
         }

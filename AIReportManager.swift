@@ -20,7 +20,7 @@ public final class AIReportManager {
 
     public let reportsDir: URL
     private let maxReportsToKeep = 10
-    public private(set) var activeReportURL: URL?
+    public var activeReportURL: URL?
 
     private var windowController: AIReportsWindowController?
 

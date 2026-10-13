@@ -12,7 +12,7 @@ import subprocess
 import threading
 import time
 from typing import Callable, Dict, List, Optional
-from uad_client import UADClient, UADChannel, UADSend
+from uad_client import UADClient, UADChannel, UADSend, UADEffect, UADEffectParam
 from uad_curve import tapered_to_db, db_to_tapered, format_db_7char
 
 CONFIG_PATH = os.path.expanduser("~/.uamcu_config.json")
@@ -77,7 +77,7 @@ def save_speech_mode(enabled: bool):
 
 
 def load_speech_volume() -> float:
-    """Read voice guidance / talkback volume (0.05 to 1.0, default: 1.0)."""
+    """Read voice guidance / talkback volume (0.0 to 1.0, default: 1.0)."""
     try:
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, "r") as f:
@@ -85,8 +85,8 @@ def load_speech_volume() -> float:
                 val = cfg.get("speech_volume", 1.0)
                 if isinstance(val, (int, float)):
                     if val > 1.0:
-                        return max(0.05, min(1.0, float(val) / 100.0))
-                    return max(0.05, min(1.0, float(val)))
+                        return max(0.0, min(1.0, float(val) / 100.0))
+                    return max(0.0, min(1.0, float(val)))
     except Exception:
         pass
     return 1.0
@@ -102,7 +102,9 @@ def save_speech_volume(vol: float):
                     cfg = json.load(f)
             except Exception:
                 cfg = {}
-        cfg["speech_volume"] = max(0.05, min(1.0, float(vol)))
+        cfg["speech_volume"] = max(0.0, min(1.0, float(vol)))
+        if cfg["speech_volume"] <= 0.001:
+            cfg["speech_feedback"] = False
         with open(CONFIG_PATH, "w") as f:
             json.dump(cfg, f, indent=2)
     except Exception:
@@ -127,6 +129,115 @@ def format_pan_speech(pan: float) -> str:
     pct = int(round(abs(pan) * 100))
     side = "left" if pan < 0 else "right"
     return f"{side} {pct} percent"
+
+
+def format_channel_pan_speech(ch) -> str:
+    """Format pan information for speech, handling both mono and stereo tracks accurately."""
+    if not ch:
+        return "center"
+    if getattr(ch, "stereo", False):
+        p1 = getattr(ch, "pan", -1.0)
+        p2 = getattr(ch, "pan2", 1.0)
+        bal = (p1 + p2) / 2.0
+        if abs(bal) < 0.03:
+            return "stereo center"
+        side = "left" if bal < 0 else "right"
+        pct = int(abs(bal) * 100)
+        return f"{side} {pct} percent"
+    return format_pan_speech(getattr(ch, "pan", 0.0))
+
+
+def format_compact_db(db: float) -> str:
+    """Format dB into an exact 4-character string: e.g. ' 0.0', '-6.0', ' -12', ' -oo'."""
+    if db <= -140.0:
+        return " -oo"
+    if abs(db) < 0.05:
+        return " 0.0"
+    if db > 0:
+        if db < 9.95:
+            return f"+{db:.1f}"
+        return f"+{round(db):.0f}".rjust(4)
+    if db <= -99.95:
+        return f"{round(db):.0f}".rjust(4)
+    if db > -9.95:
+        return f"{db:.1f}"
+    return f"{round(db):.0f}".rjust(4)
+
+
+def format_channel_name_7char(name: str) -> str:
+    """Format or compress a channel name into a clean 7-character string.
+    Ensures that trailing channel numbers (e.g. 'Apollo 1', 'Apollo 2', 'OctoPre 1')
+    are never truncated or lost, compressing spaces and prefixes as needed.
+    """
+    s = name.strip()
+    if len(s) <= 7:
+        return s
+    m = re.match(r'^(.*?)\s+(\d+)$', s)
+    if m:
+        prefix, num = m.groups()
+        combined = f"{prefix}{num}"
+        if len(combined) <= 7:
+            return combined
+        avail = 7 - len(num)
+        return f"{prefix[:avail]}{num}"
+    return s[:7]
+
+
+def format_param_name_7char(name: str) -> str:
+    """Format plug-in parameter name into a clean, unambiguous 7-character string."""
+    s = name.strip()
+    if len(s) <= 7:
+        return s
+    replacements = [
+        ("Frequency", "Freq"),
+        ("Threshold", "Thresh"),
+        ("Select", "Sel"),
+        ("Attack", "Atk"),
+        ("Release", "Rel"),
+        ("Reduction", "Red"),
+        ("Output", "Out"),
+        ("Input", "In"),
+        ("Gain", "Gn"),
+        ("Level", "Lvl"),
+        ("Ratio", "Rat"),
+    ]
+    for full, abbr in replacements:
+        s = s.replace(full, abbr)
+        if len(s) <= 7:
+            return s
+    no_space = s.replace(" ", "")
+    if len(no_space) <= 7:
+        return no_space
+    return no_space[:7]
+
+
+def format_plugin_name_7char(raw_name: str) -> str:
+    """Format cleaned plug-in name into an unambiguous 7-character string for MCU LCD."""
+    s = raw_name.strip()
+    for prefix in ("Universal Audio ", "UAD ", "Teletronix ", "UA "):
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+    s = s.replace(" Legacy", "").replace(" Classic", "").replace(" Channel Strip", "").strip()
+    if len(s) <= 7:
+        return s
+    replacements = [
+        ("Pure Plate", "PurePlt"),
+        ("Fairchild", "Fairchd"),
+        ("Precision", "Precisn"),
+        ("Compressor", "Comp"),
+        ("Limiter", "Limit"),
+        ("Equalizer", "EQ"),
+        ("Pultec", "Pultec"),
+        ("Helios", "Helios"),
+    ]
+    for full, abbr in replacements:
+        s = s.replace(full, abbr)
+        if len(s) <= 7:
+            return s
+    no_space = s.replace(" ", "")
+    if len(no_space) <= 7:
+        return no_space
+    return no_space[:7]
 
 
 class VoiceAnnouncer:
@@ -156,23 +267,31 @@ class VoiceAnnouncer:
                     raw_vol = cfg.get("speech_volume", 1.0)
                     if isinstance(raw_vol, (int, float)):
                         if raw_vol > 1.0:
-                            self._cached_volume = max(0.05, min(1.0, float(raw_vol) / 100.0))
+                            self._cached_volume = max(0.0, min(1.0, float(raw_vol) / 100.0))
                         else:
-                            self._cached_volume = max(0.05, min(1.0, float(raw_vol)))
+                            self._cached_volume = max(0.0, min(1.0, float(raw_vol)))
         except Exception:
             pass
 
     @staticmethod
     def _sanitize_for_speech(text: str) -> str:
-        """Ensure 'dB' is spoken as the letters 'd B' instead of expanding to 'decibels'."""
+        """Ensure 'dB' is spoken as 'd B' and stereo track indicators ('-ST', 'ST') are spoken as 'Stereo'."""
         text = re.sub(r'(\d|\b)dB\b', r'\1 d B', text)
         text = re.sub(r'(\d|\b)db\b', r'\1 d B', text)
         text = re.sub(r'(\d|\b)DB\b', r'\1 d B', text)
+        text = re.sub(r'[-_/]ST\b', ' Stereo', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bST\b', 'Stereo', text)
+        # Ensure 1176 is spoken naturally as "Eleven-Seventy-Six"
+        text = re.sub(r'\b1176\s*LN\b', 'Eleven-Seventy-Six L N', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b1176\s*SE\b', 'Eleven-Seventy-Six S E', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b1176\b', 'Eleven-Seventy-Six', text)
         return re.sub(r'\s+', ' ', text).strip()
 
     def is_enabled(self) -> bool:
         self._refresh_config()
-        return self._cached_enabled
+        if not self._cached_enabled or self._cached_volume <= 0.001:
+            return False
+        return True
 
     def get_volume(self) -> float:
         self._refresh_config()
@@ -292,8 +411,18 @@ class SlotMarquee:
             self.step_counter += 1
 
 
-def pan_to_str(pan: float) -> str:
-    """Format pan (-1.0 to 1.0) as 6-char string (e.g. ' L 50 ', '   C  ', ' R 25 ')."""
+def pan_to_str(pan: float, pan2: Optional[float] = None, is_stereo: bool = False) -> str:
+    """Format pan (-1.0 to 1.0) as 6-to-9 char string for dashboard and logs."""
+    if is_stereo:
+        p2 = 1.0 if pan2 is None else pan2
+        bal = (pan + p2) / 2.0
+        if abs(bal) < 0.03:
+            return " L <-> R "
+        p1_val = int(abs(pan) * 100)
+        p2_val = int(abs(p2) * 100)
+        p1_dir = "L" if pan < 0 else "R"
+        p2_dir = "L" if p2 < 0 else "R"
+        return f"{p1_dir}{p1_val:<2d} {p2_dir}{p2_val:<2d}"
     if abs(pan) < 0.03:
         return "  C   "
     elif pan < 0:
@@ -372,10 +501,20 @@ class MCUEngine:
         self._flip_timer: Optional[threading.Timer] = None
         self.send_flip_led(False)
 
+        # Channel Sends Focus Mode: All sends (AUX 1..2, CUE 1..4) expanded across 8 strips for selected track
+        self.sends_focus_mode: bool = False
+        self.sends_focus_channel: int = 0
+
         # Preamp Focus / Channel Inspector Mode (Concept 1)
         self.preamp_focus_mode: bool = False
         self.preamp_focus_channel: int = 0
         self._48v_arm_time: float = 0.0
+
+        # Plugin / Insert Focus Mode: 8 insert plugin slots expanded across 8 strips for selected track
+        self.plugin_focus_mode: bool = False
+        self.plugin_focus_channel: int = 0
+        self.plugin_focus_slot_idx: int = 0
+        self.plugin_param_page: int = 0
 
         # Channel Rotary Wheel Mode: 'channel' (Option 1) or 'monitor' (Option 2)
         self._config_mtime: float = 0.0
@@ -423,8 +562,12 @@ class MCUEngine:
                     val_14bit = (msb << 7) | lsb
                     tapered = val_14bit / 16383.0
 
-                    if self.preamp_focus_mode:
+                    if self.plugin_focus_mode:
+                        self._handle_plugin_focus_fader(ch, tapered)
+                    elif self.preamp_focus_mode:
                         self._handle_preamp_fader(ch, tapered)
+                    elif self.sends_focus_mode:
+                        self._handle_sends_focus_fader(ch, tapered)
                     else:
                         target_channel = self.bank_offset + ch
                         if self.active_send_idx is not None:
@@ -489,10 +632,22 @@ class MCUEngine:
                 self._last_wheel_strobe = time.time()
             return
 
-        # Channel / Plug-in buttons: Note 40 (0x28) / Note 43 (0x2B) -> Toggle Preamp Focus Mode
-        if note in (40, 43):
+        # Channel button: Note 40 (0x28) -> Toggle Preamp Focus Mode
+        if note == 40:
             if is_down:
                 self.toggle_preamp_focus_mode()
+            return
+
+        # Send button: Note 41 (0x29) -> Toggle Sends Focus Mode
+        if note == 41:
+            if is_down:
+                self.toggle_sends_focus_mode()
+            return
+
+        # Plug-in button: Note 43 (0x2B) -> Toggle Plugin / Insert Focus Mode
+        if note == 43:
+            if is_down:
+                self.toggle_plugin_focus_mode()
             return
 
         # FLIP Button: 0x32 (50) -> Single-press: Cycle sends; Double-press: Direct return to Main Mix
@@ -501,9 +656,11 @@ class MCUEngine:
                 self._handle_flip_button()
             return
 
-        # If in Preamp Focus Mode, delegate buttons to _handle_preamp_note
-        if self.preamp_focus_mode:
-            self._handle_preamp_note(note, is_down)
+        # Channel Rotary Knob Press: Note 84 (Jog Click) / Note 100 / Note 101 / Note 79
+        # Mute / Unmute Apollo Master Monitor Volume
+        if note in (84, 100, 101, 79):
+            if is_down:
+                self.toggle_monitor_mute()
             return
 
         # ZERO / AUTO modifier buttons:
@@ -517,15 +674,28 @@ class MCUEngine:
             vel = 0x7F if (self.zero_mode_held or self.zero_mode_latched) else 0x00
             self.send_midi(bytes([0x90, note, vel]))
             self.update_zero_mode_leds()
+            return
+
+        # If in Plugin Focus Mode, delegate buttons directly to _handle_plugin_focus_note
+        if self.plugin_focus_mode:
+            self._handle_plugin_focus_note(note, is_down)
+            return
 
         # Channel Select Buttons: 0x18..0x1F (24..31)
-        # Double-press: Reset fader to 0.0 dB
-        # Long-press (> 0.5s): Reset fader to lowest level (-oo dB)
-        # Single-press: Normal channel selection
         if 24 <= note <= 31:
             slot = note - 24
             target_ch = self.bank_offset + slot
             self._handle_sel_button(slot, target_ch, is_down)
+            return
+
+        # If in Preamp Focus Mode, delegate buttons to _handle_preamp_note
+        if self.preamp_focus_mode:
+            self._handle_preamp_note(note, is_down)
+            return
+
+        # If in Sends Focus Mode, delegate buttons to _handle_sends_focus_note
+        if self.sends_focus_mode:
+            self._handle_sends_focus_note(note, is_down)
             return
 
         if not is_down:
@@ -547,10 +717,14 @@ class MCUEngine:
             else:
                 if getattr(ch_obj, "ch_type", "input") == "aux":
                     return  # Aux return is stereo without pan
-                print(f"[MCU] V-Pot Push: Reset channel {target_ch + 1} Pan to Center")
-                self.uad.set_pan(target_ch, 0.0)
+                is_st = getattr(ch_obj, "stereo", False)
+                print(f"[MCU] V-Pot Push: Reset channel {target_ch + 1} Pan")
+                self.uad.reset_pan(target_ch)
                 self._update_lcd_row2()
-                self.voice.speak(f"{ch_name} pan centered")
+                if is_st:
+                    self.voice.speak(f"{ch_name} pan reset to stereo default")
+                else:
+                    self.voice.speak(f"{ch_name} pan centered")
             self.send_vpot_led_ring(slot, 0.0)
             return
 
@@ -592,12 +766,6 @@ class MCUEngine:
             self.send_solo_led(slot, new_solo)
             solo_state = "solo on" if new_solo else "solo off"
             self.voice.speak(f"{ch_name} {solo_state}")
-            return
-
-        # Channel Rotary Wheel Push / Click: Note 84 (Jog Click) / Note 100 / Note 101 / Note 79
-        # Toggles Channel Wheel between Option 1 (1-Track Navigation) and Option 2 (Monitor Volume)
-        if note in (84, 100, 101, 79):
-            self.toggle_wheel_mode()
             return
 
         # Navigation Buttons & Rotary Wheel Controls
@@ -647,7 +815,7 @@ class MCUEngine:
             return
 
     def return_to_main_mix(self):
-        """Immediately return from any send/cue mode or preamp focus mode directly back to normal Main Mix and reset to the first channel (Tracks 1-8)."""
+        """Double-press FLIP ('Home'): Immediately return from any sub-mode back to normal Main Mix and reset to Channels 1-8."""
         if self._flip_timer:
             try:
                 self._flip_timer.cancel()
@@ -656,12 +824,16 @@ class MCUEngine:
             self._flip_timer = None
         self._last_flip_press_time = 0.0
 
+        was_plugin_mode = self.plugin_focus_mode
         was_preamp_mode = self.preamp_focus_mode
-        was_send_mode = (self.active_send_idx is not None)
+        was_sends_mode = self.sends_focus_mode
         was_offset = (self.bank_offset != 0)
 
+        self.plugin_focus_mode = False
         self.preamp_focus_mode = False
+        self.sends_focus_mode = False
         self.send_midi(bytes([0x90, 40, 0x00]))  # CHANNEL LED off
+        self.send_midi(bytes([0x90, 41, 0x00]))  # SEND LED off
         self.send_midi(bytes([0x90, 43, 0x00]))  # PLUG-IN LED off
 
         self.active_send_idx = None
@@ -670,9 +842,10 @@ class MCUEngine:
         for m in self.marquees:
             m.reset()
         self.send_flip_led(False)
+        self.update_plugin_slot_leds()
         self.refresh_all_slots()
 
-        print("[MCU] FLIP Double-Press -> Returned directly to MAIN MIX & First Channel (Tracks 1-8)")
+        print("[MCU] FLIP Double-Press ('Home') -> Returned directly to MAIN MIX & Channels 1-8")
         total_ch = len(self.uad.channels) if self.uad.channels else 25
         end_num = min(8, total_ch)
         first_ch = self.uad.channels.get(0)
@@ -680,8 +853,12 @@ class MCUEngine:
         first_name = first_ch.name.strip() if first_ch else ""
         last_name = last_ch.name.strip() if last_ch else ""
 
-        if was_preamp_mode:
+        if was_plugin_mode:
+            self.voice.speak("Exiting plugin mode, Main mix")
+        elif was_preamp_mode:
             self.voice.speak("Exiting preamp focus, Main mix")
+        elif was_sends_mode:
+            self.voice.speak("Exiting sends mode, Main mix")
         elif was_offset and first_name and last_name:
             self.voice.speak(f"Main mix, {first_name} through {last_name}")
         elif was_offset:
@@ -689,43 +866,39 @@ class MCUEngine:
         else:
             self.voice.speak("Main mix")
 
-    def cycle_send_mode(self):
-        """Cycle to the next send mode (Normal -> Aux 1 -> Aux 2 -> Cue 1..N -> Normal)."""
+    def go_back_one_level(self):
+        """Single-press FLIP ('Back'): exit sends_focus_mode, plugin_focus_mode, or preamp_focus_mode back to Main Mix at current bank."""
         self._last_flip_press_time = 0.0
-        modes = self.get_available_send_modes()
-        if self.active_send_idx is None:
-            self.active_send_idx = modes[0][0]
-            mode_name = f"{modes[0][2]} (SENDS ON FADERS)"
-        else:
-            curr_idx = -1
-            for i, m in enumerate(modes):
-                if m[0] == self.active_send_idx:
-                    curr_idx = i
-                    break
-            if curr_idx != -1 and curr_idx + 1 < len(modes):
-                next_mode = modes[curr_idx + 1]
-                self.active_send_idx = next_mode[0]
-                mode_name = f"{next_mode[2]} (SENDS ON FADERS)"
-            else:
-                self.active_send_idx = None
-                mode_name = "MAIN MIX (NORMAL)"
+        was_in_submode = self.sends_focus_mode or self.plugin_focus_mode or self.preamp_focus_mode or (self.active_send_idx is not None)
 
-        print(f"[MCU] FLIP pressed -> Switched to {mode_name}")
-        if self.active_send_idx is not None:
-            spk_mode = mode_name.replace(" (SENDS ON FADERS)", " sends on faders")
-            self.voice.speak(spk_mode)
-        else:
-            self.voice.speak("Main mix")
+        self.sends_focus_mode = False
+        self.plugin_focus_mode = False
+        self.preamp_focus_mode = False
+        self.active_send_idx = None
+        self.send_midi(bytes([0x90, 40, 0x00]))  # CHANNEL LED off
+        self.send_midi(bytes([0x90, 41, 0x00]))  # SEND LED off
+        self.send_midi(bytes([0x90, 43, 0x00]))  # PLUG-IN LED off
+        self.send_flip_led(False)
+        self.update_plugin_slot_leds()
         for m in self.marquees:
             m.reset()
-        self.send_flip_led(self.active_send_idx is not None)
         self.refresh_all_slots()
 
+        if was_in_submode:
+            print("[MCU] FLIP Single-Press ('Back') -> Exited to Main Mix at current bank")
+            self.voice.speak("Main mix")
+        else:
+            total_ch = len(self.uad.channels) if self.uad.channels else 25
+            end_num = min(self.bank_offset + 8, total_ch)
+            start_num = self.bank_offset + 1
+            print(f"[MCU] FLIP Single-Press ('Back') -> Already at Main Mix (Tracks {start_num}-{end_num})")
+            self.voice.speak(f"Main mix, channels {start_num} through {end_num}")
+
     def _handle_flip_button(self):
-        """Handle FLIP button: Single-press cycles send modes, Double-press returns directly to Main Mix."""
+        """Handle FLIP button: Single-press = Back (exits sub-modes to Main Mix), Double-press = Home (snaps to Tracks 1-8)."""
         now = time.time()
         if now - self._last_flip_press_time < 0.35:
-            # Double-press detected: jump directly to Main Mix!
+            # Double-press detected: jump directly to Main Mix & Tracks 1-8!
             if self._flip_timer:
                 try:
                     self._flip_timer.cancel()
@@ -740,13 +913,25 @@ class MCUEngine:
                     self._flip_timer.cancel()
                 except Exception:
                     pass
-            timer = threading.Timer(0.30, self.cycle_send_mode)
+            timer = threading.Timer(0.30, self.go_back_one_level)
             timer.daemon = True
             timer.start()
             self._flip_timer = timer
 
     def _handle_cc(self, cc: int, val: int):
         """Handle Rotary V-Pots (CC 16..23) and Channel Rotary Wheel (CC 60)."""
+        if self.plugin_focus_mode:
+            if 16 <= cc <= 23:
+                slot = cc - 16
+                delta = -(val & 0x3F) if (val & 0x40) else (val & 0x3F)
+                self._handle_plugin_focus_vpot(slot, delta)
+                return
+            elif cc == 60:
+                delta = -(val & 0x3F) if (val & 0x40) else (val & 0x3F)
+                if delta != 0:
+                    self.step_plugin_channel(delta)
+                return
+
         if self.preamp_focus_mode:
             if 16 <= cc <= 23:
                 slot = cc - 16
@@ -757,6 +942,18 @@ class MCUEngine:
                 delta = -(val & 0x3F) if (val & 0x40) else (val & 0x3F)
                 if delta != 0:
                     self.step_preamp_channel(delta)
+                return
+
+        if self.sends_focus_mode:
+            if 16 <= cc <= 23:
+                slot = cc - 16
+                delta = -(val & 0x3F) if (val & 0x40) else (val & 0x3F)
+                self._handle_sends_focus_vpot(slot, delta)
+                return
+            elif cc == 60:
+                delta = -(val & 0x3F) if (val & 0x40) else (val & 0x3F)
+                if delta != 0:
+                    self.step_sends_channel(delta)
                 return
 
         if 16 <= cc <= 23:
@@ -778,10 +975,12 @@ class MCUEngine:
                 self.uad.set_send_pan(target_ch, self.active_send_idx, new_pan)
                 self.send_vpot_led_ring(slot, new_pan)
             else:
-                current_pan = ch_obj.pan if ch_obj else 0.0
+                current_pan = self.uad.get_effective_pan(target_ch)
                 new_pan = max(-1.0, min(1.0, current_pan + (delta * 0.02)))
-                self.uad.set_pan(target_ch, new_pan)
+                self.uad.set_channel_stereo_pan(target_ch, new_pan)
                 self.send_vpot_led_ring(slot, new_pan)
+                pan_speech = format_channel_pan_speech(ch_obj)
+                self.voice.speak_debounced(f"{ch_obj.name.strip()} pan {pan_speech}", delay=0.35)
                 self._update_lcd_row2()
 
         # Channel Rotary Wheel (Mackie Jog / Scrub Wheel: CC 60 / 0x3C)
@@ -866,7 +1065,7 @@ class MCUEngine:
 
     def select_slot(self, slot: int):
         """Select a channel slot and update SEL LEDs."""
-        self.selected_slot = slot if self.selected_slot != slot else None
+        self.selected_slot = slot
         for s in range(self.num_slots):
             self.send_sel_led(s, s == self.selected_slot)
 
@@ -875,52 +1074,29 @@ class MCUEngine:
             ch = self.uad.channels.get(ch_id)
             if ch:
                 ch_name = ch.name.strip() or f"Channel {ch_id + 1}"
-                if self.active_send_idx is not None:
-                    info = self.get_send_info(self.active_send_idx)
-                    if getattr(ch, "ch_type", "input") == "aux" and self.active_send_idx < 2:
-                        self.voice.speak(f"{ch_name}, no send")
-                    else:
-                        send = ch.sends.get(self.active_send_idx)
-                        gain_db = send.gain_db if send else -144.0
-                        byp = send.bypass if send else False
-                        byp_str = ", bypassed" if byp else ""
-                        if getattr(ch, "ch_type", "input") == "aux":
-                            self.voice.speak(f"{info['name']}, {ch_name}, {format_db_speech(gain_db)}{byp_str}")
-                        else:
-                            pan = send.pan if send else 0.0
-                            self.voice.speak(f"{info['name']}, {ch_name}, {format_db_speech(gain_db)}, {format_pan_speech(pan)}{byp_str}")
+                db_val = getattr(ch, 'fader_db', None)
+                if db_val is None:
+                    db_val = tapered_to_db(ch.fader)
+                status_parts = []
+                if ch.mute:
+                    status_parts.append("muted")
+                if ch.solo:
+                    status_parts.append("soloed")
+                stat_str = (", " + ", ".join(status_parts)) if status_parts else ""
+                if getattr(ch, "ch_type", "input") == "aux":
+                    self.voice.speak(f"{ch_name}, {format_db_speech(db_val)}{stat_str}")
                 else:
-                    db_val = getattr(ch, 'fader_db', None)
-                    if db_val is None:
-                        db_val = tapered_to_db(ch.fader)
-                    status_parts = []
-                    if ch.mute:
-                        status_parts.append("muted")
-                    if ch.solo:
-                        status_parts.append("soloed")
-                    stat_str = (", " + ", ".join(status_parts)) if status_parts else ""
-                    if getattr(ch, "ch_type", "input") == "aux":
-                        self.voice.speak(f"{ch_name}, {format_db_speech(db_val)}{stat_str}")
-                    else:
-                        self.voice.speak(f"{ch_name}, {format_db_speech(db_val)}, {format_pan_speech(ch.pan)}{stat_str}")
+                    pan_speech = format_channel_pan_speech(ch)
+                    self.voice.speak(f"{ch_name}, {format_db_speech(db_val)}, {pan_speech}{stat_str}")
 
     def _handle_sel_button(self, slot: int, target_ch: int, is_down: bool):
-        """Handle SEL button: Double-Press (0.0 dB), Long-Press (Lowest Level -oo dB), Single-Press (Select)."""
+        """Handle SEL button: AUTO+SEL (0.0 dB Unity), Long-Press (-oo dB Floor), Tap (Select / Enter Sends)."""
         now = time.time()
 
         if is_down:
-            # Button Down: cancel any pending single-click
-            if self._sel_click_timer[slot] is not None:
-                try:
-                    self._sel_click_timer[slot].cancel()
-                except Exception:
-                    pass
-                self._sel_click_timer[slot] = None
-
             self._sel_press_time[slot] = now
             self._sel_long_fired[slot] = False
 
-            # Cancel existing long-press timer if active
             if self._sel_long_timer[slot] is not None:
                 try:
                     self._sel_long_timer[slot].cancel()
@@ -943,73 +1119,118 @@ class MCUEngine:
                     pass
                 self._sel_long_timer[slot] = None
 
-            # If long-press already triggered, do not trigger click / double-click
+            # If long-press already triggered, do not trigger click
             if self._sel_long_fired[slot]:
                 self._sel_long_fired[slot] = False
-                self._sel_release_time[slot] = 0.0
                 return
 
-            # Check if ZERO mode was armed
+            # 1. AUTO + SEL: Reset to 0.0 dB (Unity Gain)
             if self.zero_mode_held or self.zero_mode_latched:
-                ch_obj = self.uad.channels.get(target_ch)
-                ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
-                print(f"[MCU] ZERO + SEL: Resetting channel {target_ch + 1} (slot {slot + 1}) to 0.0 dB")
-                self.uad.set_fader(target_ch, 0.7818182)
-                self.send_fader_position(slot, 0.7818182)
-                self._update_lcd_row2()
-                self.send_sel_led(slot, True)
-                self._sel_release_time[slot] = 0.0
-                self.voice.speak(f"{ch_name} reset to zero dB")
+                self._on_sel_zero_reset(slot, target_ch)
                 return
 
-            # Check for double-press (released within 350ms of previous release)
-            if now - self._sel_release_time[slot] < 0.35:
-                # Double-press detected: Reset to 0.0 dB
-                self._sel_release_time[slot] = 0.0
-                ch_obj = self.uad.channels.get(target_ch)
-                ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
-                if self.active_send_idx is not None:
-                    info = self.get_send_info(self.active_send_idx)
-                    print(f"[MCU] SEL {slot + 1} Double-Press: Resetting channel {target_ch + 1} {info['name']} to 0.0 dB")
-                    self.uad.set_send_gain(target_ch, self.active_send_idx, 0.7818182)
-                    self.voice.speak(f"{ch_name} {info['name']} send reset to zero dB")
-                else:
-                    print(f"[MCU] SEL {slot + 1} Double-Press: Resetting channel {target_ch + 1} to 0.0 dB")
-                    self.uad.set_fader(target_ch, 0.7818182)
-                    self.voice.speak(f"{ch_name} reset to zero dB")
-                self.send_fader_position(slot, 0.7818182)
-                self._update_lcd_row2()
-                self.send_sel_led(slot, True)
+            # 2. Sends Focus Mode: query the slot
+            if self.sends_focus_mode:
+                self._handle_sends_focus_sel(slot)
+                return
+
+            # 3. Preamp Focus Mode
+            if self.preamp_focus_mode:
+                return
+
+            # 4. Normal Main Mix Mode:
+            if self.selected_slot == slot:
+                # Tapping the already-selected track enters CUE/SENDS Focus Mode!
+                self.toggle_sends_focus_mode(target_ch)
             else:
-                # Potential single-press: start timer to execute single click if no second tap arrives
-                self._sel_release_time[slot] = now
-                timer = threading.Timer(0.35, self._on_sel_single_click, args=[slot])
-                timer.daemon = True
-                timer.start()
-                self._sel_click_timer[slot] = timer
+                # Tapping an unselected track selects it immediately with zero lag!
+                self.select_slot(slot)
+
+    def _on_sel_zero_reset(self, slot: int, target_ch: int):
+        """Reset target channel or send slot to 0.0 dB (Unity Gain) via AUTO + SEL."""
+        self._sel_release_time[slot] = 0.0
+        if self.sends_focus_mode:
+            ch_obj = self.uad.channels.get(self.sends_focus_channel)
+            ch_name = ch_obj.name.strip() if ch_obj else f"Channel {self.sends_focus_channel + 1}"
+            is_aux = (getattr(ch_obj, "ch_type", "input") == "aux")
+            if 0 <= slot <= 5:
+                if is_aux and slot < 2:
+                    return
+                info = self.get_send_info(slot)
+                print(f"[MCU] AUTO + SEL: Resetting {ch_name} {info['name']} send to 0.0 dB")
+                self.uad.set_send_gain(self.sends_focus_channel, slot, 0.7818182)
+                self.send_fader_position(slot, 0.7818182)
+                self.voice.speak(f"{ch_name} {info['name']} send reset to zero dB")
+                self.refresh_sends_focus_surface()
+            elif slot == 6:
+                print(f"[MCU] AUTO + SEL: Resetting {ch_name} Output to 0.0 dB")
+                self.uad.set_fader(self.sends_focus_channel, 0.7818182)
+                self.send_fader_position(6, 0.7818182)
+                self.voice.speak(f"{ch_name} output reset to zero dB")
+                self.refresh_sends_focus_surface()
+            elif slot == 7:
+                print(f"[MCU] AUTO + SEL: Resetting {ch_name} Pan to Center")
+                self.uad.set_pan(self.sends_focus_channel, 0.0)
+                self.send_fader_position(7, 0.5)
+                self.send_vpot_led_ring(7, 0.0)
+                self.voice.speak(f"{ch_name} pan centered")
+                self.refresh_sends_focus_surface()
+        elif self.preamp_focus_mode:
+            ch_obj = self.uad.channels.get(self.preamp_focus_channel)
+            ch_name = ch_obj.name.strip() if ch_obj else f"Channel {self.preamp_focus_channel + 1}"
+            if slot == 0:
+                self.uad.set_preamp_gain(self.preamp_focus_channel, 10.0)
+                self.voice.speak(f"{ch_name} preamp gain reset to plus 10 dB")
+            elif slot == 6:
+                self.uad.set_fader(self.preamp_focus_channel, 0.7818182)
+                self.voice.speak(f"{ch_name} output reset to zero dB")
+            self.refresh_preamp_focus_surface()
+        else:
+            ch_obj = self.uad.channels.get(target_ch)
+            ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
+            print(f"[MCU] AUTO + SEL: Resetting channel {target_ch + 1} to 0.0 dB")
+            self.uad.set_fader(target_ch, 0.7818182)
+            self.send_fader_position(slot, 0.7818182)
+            self._update_lcd_row2()
+            self.send_sel_led(slot, True)
+            self.voice.speak(f"{ch_name} reset to zero dB")
 
     def _on_sel_long_press(self, slot: int, target_ch: int):
         """Callback when SEL button is held for > 0.5s: Reset fader to lowest level (-oo dB)."""
         self._sel_long_fired[slot] = True
-        ch_obj = self.uad.channels.get(target_ch)
-        ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
-        if self.active_send_idx is not None:
-            info = self.get_send_info(self.active_send_idx)
-            print(f"[MCU] SEL {slot + 1} Long-Press: Resetting channel {target_ch + 1} {info['name']} to lowest level (-oo dB)")
-            self.uad.set_send_gain(target_ch, self.active_send_idx, 0.0)
-            self.voice.speak(f"{ch_name} {info['name']} send set to minus infinity")
+        if self.sends_focus_mode:
+            ch_obj = self.uad.channels.get(self.sends_focus_channel)
+            ch_name = ch_obj.name.strip() if ch_obj else f"Channel {self.sends_focus_channel + 1}"
+            is_aux = (getattr(ch_obj, "ch_type", "input") == "aux")
+            if 0 <= slot <= 5:
+                if is_aux and slot < 2:
+                    return
+                info = self.get_send_info(slot)
+                print(f"[MCU] SEL {slot + 1} Long-Press: Resetting {ch_name} {info['name']} send to -oo dB")
+                self.uad.set_send_gain(self.sends_focus_channel, slot, 0.0)
+                self.send_fader_position(slot, 0.0)
+                self.voice.speak(f"{ch_name} {info['name']} send set to minus infinity")
+                self.refresh_sends_focus_surface()
+            elif slot == 6:
+                print(f"[MCU] SEL {slot + 1} Long-Press: Resetting {ch_name} Output to -oo dB")
+                self.uad.set_fader(self.sends_focus_channel, 0.0)
+                self.send_fader_position(6, 0.0)
+                self.voice.speak(f"{ch_name} output set to minus infinity")
+                self.refresh_sends_focus_surface()
+        elif self.preamp_focus_mode:
+            if slot == 6:
+                self.uad.set_fader(self.preamp_focus_channel, 0.0)
+                self.send_fader_position(6, 0.0)
+                self.refresh_preamp_focus_surface()
         else:
+            ch_obj = self.uad.channels.get(target_ch)
+            ch_name = ch_obj.name.strip() if ch_obj else f"Channel {target_ch + 1}"
             print(f"[MCU] SEL {slot + 1} Long-Press: Resetting channel {target_ch + 1} to lowest level (-oo dB)")
             self.uad.set_fader(target_ch, 0.0)
+            self.send_fader_position(slot, 0.0)
+            self._update_lcd_row2()
+            self.send_sel_led(slot, False)
             self.voice.speak(f"{ch_name} set to minus infinity")
-        self.send_fader_position(slot, 0.0)
-        self._update_lcd_row2()
-        self.send_sel_led(slot, False)
-
-    def _on_sel_single_click(self, slot: int):
-        """Callback when single-click timer expires without a second tap: Select slot."""
-        self._sel_release_time[slot] = 0.0
-        self.select_slot(slot)
 
     def _cancel_all_sel_timers(self):
         """Cancel any pending SEL timers across all slots."""
@@ -1192,7 +1413,7 @@ class MCUEngine:
                     self.send_fader_position(slot, ch.fader)
                     self.send_mute_led(slot, ch.mute)
                     self.send_solo_led(slot, ch.solo)
-                    self.send_vpot_led_ring(slot, ch.pan)
+                    self.send_vpot_led_ring(slot, self.uad.get_effective_pan(ch.id))
             else:
                 self.send_fader_position(slot, 0.0)
                 self.send_mute_led(slot, False)
@@ -1212,7 +1433,7 @@ class MCUEngine:
         """Background thread updating marquee text at 4 Hz for slots with > 7 characters."""
         while self._running:
             time.sleep(0.25)
-            if self.preamp_focus_mode:
+            if self.preamp_focus_mode or self.sends_focus_mode or self.plugin_focus_mode:
                 continue
             with self._lock:
                 has_scrolling = any(len(m.current_text) > 7 for m in self.marquees)
@@ -1232,15 +1453,10 @@ class MCUEngine:
                     # Send mode indicator: e.g. "A1:Apollo 1", "C1:Overhead Right"
                     info = self.get_send_info(self.active_send_idx)
                     full_name = f"{info['prefix']}:{ch.name.strip()}"
+                    display_name = full_name
                 else:
                     full_name = ch.name.strip()
-
-                # If name is 8 chars with a space before a digit (e.g. "Apollo 1"),
-                # compress to 7 chars ("Apollo1") so it fits and centers cleanly
-                if len(full_name) == 8 and full_name[-2] == " " and full_name[-1].isdigit():
-                    display_name = full_name[:-2] + full_name[-1]
-                else:
-                    display_name = full_name
+                    display_name = format_channel_name_7char(full_name)
 
                 self.marquees[slot].update_text(display_name)
                 names.append(self.marquees[slot].get_display_str())
@@ -1272,7 +1488,14 @@ class MCUEngine:
         with self._lock:
             self._hud_active = False
             self._last_row2_text = ""
-            self._update_lcd_row2()
+            if self.plugin_focus_mode:
+                self.refresh_plugin_focus_surface()
+            elif self.sends_focus_mode:
+                self.refresh_sends_focus_surface()
+            elif self.preamp_focus_mode:
+                self.refresh_preamp_focus_surface()
+            else:
+                self._update_lcd_row2()
 
     def get_wheel_mode(self) -> str:
         """Check if wheel mode changed in config file or memory."""
@@ -1305,6 +1528,21 @@ class MCUEngine:
             pass
         print(f"[MCU] Toggled Wheel Mode -> {new_mode}")
         self.show_temp_hud(msg, duration=1.5)
+
+    def toggle_monitor_mute(self):
+        """Toggle Apollo master monitor volume mute state with tactile HUD and speech feedback."""
+        self.uad.toggle_monitor_mute()
+        is_muted = self.uad.monitor_mute
+        if is_muted:
+            self.show_temp_hud(">>> MONITOR: MUTED <<<", duration=1.5)
+            self.voice.speak("Monitor Muted")
+            print("[MCU] Channel Knob Press -> Monitor MUTED")
+        else:
+            db_speech = format_db_speech(self.uad.monitor_level_db)
+            disp_str = f"MONITOR: {self.uad.monitor_level_db:+.1f} dB"
+            self.show_temp_hud(f">>> {disp_str} <<<", duration=1.5)
+            self.voice.speak(f"Monitor Unmuted, {db_speech}")
+            print(f"[MCU] Channel Knob Press -> Monitor UNMUTED ({self.uad.monitor_level_db:+.1f} dB)")
 
     def _update_lcd_row2(self):
         """Format dB levels or status across 8 channels."""
@@ -1345,13 +1583,73 @@ class MCUEngine:
     def _on_uad_channel_change(self, event_type: str, ch_id: int, value):
         """Handle asynchronous state changes from Apollo Console."""
         if event_type in ("channel_list", "refresh_all"):
-            if self.preamp_focus_mode:
+            total_ch = len(self.uad.channels) if self.uad.channels else 25
+            if self.bank_offset >= total_ch:
+                self.bank_offset = max(0, ((total_ch - 1) // 8) * 8)
+            if self.plugin_focus_mode:
+                if self.plugin_focus_channel not in self.uad.channels:
+                    self.plugin_focus_channel = list(self.uad.channels.keys())[0] if self.uad.channels else 0
+                self.refresh_plugin_focus_surface()
+            elif self.preamp_focus_mode:
+                plugin_channels = self.get_plugin_channels()
+                if self.preamp_focus_channel not in plugin_channels:
+                    self.preamp_focus_channel = plugin_channels[0] if plugin_channels else 0
                 self.refresh_preamp_focus_surface()
+            elif self.sends_focus_mode:
+                if self.sends_focus_channel not in self.uad.channels:
+                    self.sends_focus_channel = list(self.uad.channels.keys())[0] if self.uad.channels else 0
+                self.refresh_sends_focus_surface()
             else:
                 self.refresh_all_slots()
+
+            if event_type == "channel_list":
+                if hasattr(self, "_prev_channel_count") and self._prev_channel_count != total_ch:
+                    num_devs = len(getattr(self.uad, 'devices', {}))
+                    dev_text = f" across {num_devs} devices" if num_devs > 1 else ""
+                    self.voice.speak_debounced(f"Recognized {total_ch} channels{dev_text}", delay=0.3)
+                self._prev_channel_count = total_ch
             return
 
         if event_type == "monitor":
+            return
+
+        # Plugin / Insert Focus Mode routing
+        if self.plugin_focus_mode:
+            if ch_id == self.plugin_focus_channel:
+                if event_type in ("effect", "effect_prop", "unison", "unison_prop", "effect_param", "effect_param_norm", "effect_param_str", "record_pre_effects", "fader", "fader_db", "mute", "solo", "pan", "name"):
+                    self.refresh_plugin_focus_surface()
+                if event_type in ("effect_prop", "unison_prop"):
+                    prop_name = value[1] if event_type == "effect_prop" else value[0]
+                    prop_val = bool(value[2] if event_type == "effect_prop" else value[1])
+                    if prop_name == "Power":
+                        ch_obj = self.uad.channels.get(ch_id)
+                        if ch_obj:
+                            slots = ch_obj.get_plugin_slots()
+                            slot_idx = max(0, min(len(slots) - 1, self.plugin_focus_slot_idx))
+                            curr_eff = slots[slot_idx].get("effect")
+                            if curr_eff and curr_eff.name:
+                                p_name = self.clean_plugin_name(curr_eff.name)
+                                self.voice.speak_debounced(f"{p_name} {'on' if prop_val else 'off'}", delay=0.25)
+                if event_type == "effect_param_str":
+                    eff_obj, p_idx, p_obj = value
+                    if getattr(self, "_active_adjusting_param", None) == (ch_id, p_idx):
+                        clean_str = p_obj.str_val
+                        clean_speech = self._spoken_db(clean_str) if "db" in clean_str.lower() else clean_str
+                        if ":" in clean_str:
+                            clean_speech = clean_str.replace(":", " to ")
+                        self.voice.speak_debounced(f"{p_obj.name} {clean_speech}", delay=0.25)
+                    elif getattr(self, "_active_vpot_push", None) == (ch_id, p_idx):
+                        self._active_vpot_push = None
+                        clean_str = p_obj.str_val
+                        clean_speech = self._spoken_db(clean_str) if "db" in clean_str.lower() else clean_str
+                        if ":" in clean_str:
+                            clean_speech = clean_str.replace(":", " to ")
+                        self.voice.speak(f"{p_obj.name}: {clean_speech}")
+                elif event_type == "meter":
+                    ch_obj = self.uad.channels.get(ch_id)
+                    is_clip = ch_obj.meter_clip if ch_obj else False
+                    for s in range(self.num_slots):
+                        self.send_meter_level(s, float(value), is_clip)
             return
 
         # Preamp Focus Mode routing
@@ -1363,6 +1661,17 @@ class MCUEngine:
                     ch_obj = self.uad.channels.get(ch_id)
                     is_clip = ch_obj.meter_clip if ch_obj else False
                     self.send_meter_level(0, float(value), is_clip)
+                    self.send_meter_level(6, float(value), is_clip)
+            return
+
+        # Sends Focus Mode routing
+        if self.sends_focus_mode:
+            if ch_id == self.sends_focus_channel:
+                if event_type in ("send_gain", "send_pan", "send_bypass", "fader", "fader_db", "mute", "solo", "pan", "name"):
+                    self.refresh_sends_focus_surface()
+                elif event_type == "meter":
+                    ch_obj = self.uad.channels.get(ch_id)
+                    is_clip = ch_obj.meter_clip if ch_obj else False
                     self.send_meter_level(6, float(value), is_clip)
             return
 
@@ -1402,9 +1711,9 @@ class MCUEngine:
         elif event_type == "solo":
             if self.active_send_idx is None:
                 self.send_solo_led(slot, bool(value))
-        elif event_type == "pan":
+        elif event_type in ("pan", "pan2"):
             if self.active_send_idx is None:
-                self.send_vpot_led_ring(slot, float(value))
+                self.send_vpot_led_ring(slot, self.uad.get_effective_pan(ch_id))
         elif event_type == "name":
             self._update_lcd_row1()
         elif event_type == "meter":
@@ -1412,14 +1721,374 @@ class MCUEngine:
             is_clip = ch_obj.meter_clip if ch_obj else False
             self.send_meter_level(slot, float(value), is_clip)
 
+    # --- Channel Sends Focus Mode (AUX 1..2, CUE 1..4, Output, Pan across 8 Strips) ---
+
+    def toggle_sends_focus_mode(self, target_ch: Optional[int] = None):
+        """Toggle Channel Sends Focus Mode (all sends of target channel expanded across 8 strips)."""
+        if self.sends_focus_mode:
+            self.sends_focus_mode = False
+            self.send_flip_led(False)
+            self.send_midi(bytes([0x90, 41, 0x00]))  # SEND LED off
+            for m in self.marquees:
+                m.reset()
+            self.refresh_all_slots()
+            self.show_temp_hud(">>> EXIT SENDS MODE <<<", duration=1.2)
+            self.voice.speak("Main mix")
+            print("[MCU] Exited Sends Focus Mode -> Returned to Main Mix")
+        else:
+            if self.preamp_focus_mode:
+                self.preamp_focus_mode = False
+                self.send_midi(bytes([0x90, 40, 0x00]))
+            if self.plugin_focus_mode:
+                self.plugin_focus_mode = False
+                self.send_midi(bytes([0x90, 43, 0x00]))
+
+            if target_ch is not None and target_ch in self.uad.channels:
+                candidate = target_ch
+            elif self.selected_slot is not None and (self.bank_offset + self.selected_slot) in self.uad.channels:
+                candidate = self.bank_offset + self.selected_slot
+            elif self.bank_offset in self.uad.channels:
+                candidate = self.bank_offset
+            else:
+                candidate = list(self.uad.channels.keys())[0] if self.uad.channels else 0
+
+            self.sends_focus_mode = True
+            self.sends_focus_channel = candidate
+            self.send_flip_led(True)
+            self.send_midi(bytes([0x90, 41, 0x7F]))  # SEND LED on
+
+            ch = self.uad.channels.get(candidate)
+            ch_name = ch.name.strip() if ch else f"Channel {candidate + 1}"
+            self.show_temp_hud(f">>> SENDS: {ch_name.upper()} <<<", duration=1.5)
+            self.voice.speak(f"{ch_name} sends on faders")
+            print(f"[MCU] Entered Sends Focus Mode on channel {candidate} ({ch_name})")
+            self.refresh_sends_focus_surface()
+
+    def step_sends_channel(self, delta: int):
+        """Step directly between channels in Sends Focus Mode."""
+        ch_keys = sorted(self.uad.channels.keys())
+        if not ch_keys:
+            return
+        try:
+            curr_idx = ch_keys.index(self.sends_focus_channel)
+        except ValueError:
+            curr_idx = 0
+        new_idx = max(0, min(len(ch_keys) - 1, curr_idx + delta))
+        if new_idx != curr_idx:
+            self.sends_focus_channel = ch_keys[new_idx]
+            ch = self.uad.channels.get(self.sends_focus_channel)
+            ch_name = ch.name.strip() if ch else f"Channel {self.sends_focus_channel + 1}"
+            self.show_temp_hud(f">>> SENDS: {ch_name.upper()} <<<", duration=1.2)
+            self.voice.speak_debounced(f"Focused on {ch_name} sends", delay=0.25)
+            self.refresh_sends_focus_surface()
+        else:
+            if delta > 0:
+                self.voice.speak_debounced("Last channel", delay=0.25)
+            else:
+                self.voice.speak_debounced("First channel", delay=0.25)
+
+    def refresh_sends_focus_surface(self):
+        """Update all 8 physical faders, LEDs, V-Pots, and LCD scribble strips for Channel Sends Focus Mode."""
+        ch = self.uad.channels.get(self.sends_focus_channel)
+        if not ch:
+            return
+        ch_name = ch.name.strip() or f"Channel {self.sends_focus_channel + 1}"
+        is_aux = (getattr(ch, "ch_type", "input") == "aux")
+
+        # Slots 0 to 5: AUX 1, AUX 2, CUE 1..4
+        for slot in range(6):
+            if is_aux and slot < 2:
+                self.send_fader_position(slot, 0.0)
+                self.send_mute_led(slot, False)
+                self.send_solo_led(slot, False)
+                self.send_sel_led(slot, False)
+                self.send_vpot_led_ring(slot, 0.0)
+            else:
+                send = ch.sends.get(slot)
+                gain = send.gain if send else 0.0
+                pan = send.pan if send else 0.0
+                byp = send.bypass if send else False
+                self.send_fader_position(slot, gain)
+                self.send_mute_led(slot, byp)
+                self.send_solo_led(slot, False)
+                self.send_sel_led(slot, byp)
+                self.send_vpot_led_ring(slot, pan)
+
+        # Slot 6: Output Fader Level & Pan
+        self.send_fader_position(6, ch.fader)
+        self.send_mute_led(6, ch.mute)
+        self.send_solo_led(6, ch.solo)
+        self.send_sel_led(6, ch.mute)
+        eff_pan = self.uad.get_effective_pan(self.sends_focus_channel)
+        self.send_vpot_led_ring(6, eff_pan)
+
+        # Slot 7: Output Pan
+        self.send_fader_position(7, (eff_pan + 1.0) / 2.0)
+        self.send_mute_led(7, False)
+        self.send_solo_led(7, False)
+        self.send_sel_led(7, abs(eff_pan) < 0.03)
+        self.send_vpot_led_ring(7, eff_pan)
+
+        # LCD Row 1: Channel name prominently across all slots
+        ch_disp = format_channel_name_7char(ch_name)
+        row1_slots = [f"{ch_disp:^7}" for _ in range(self.num_slots)]
+        row1 = "".join(row1_slots)
+        if row1 != self._last_row1_text:
+            self._last_row1_text = row1
+            self.send_lcd_text(1, row1)
+
+        # LCD Row 2: Sub text with send names and values
+        if not self._hud_active:
+            row2_slots = []
+            for slot in range(self.num_slots):
+                if 0 <= slot <= 1:
+                    prefix = f"A{slot + 1}:"
+                    if is_aux:
+                        row2_slots.append(f"{prefix} ---")
+                    else:
+                        send = ch.sends.get(slot)
+                        if send and send.bypass:
+                            row2_slots.append(f"{prefix} BYP")
+                        else:
+                            db_val = send.gain_db if send else -144.0
+                            s_db = format_compact_db(db_val)
+                            row2_slots.append(f"{prefix}{s_db.rjust(4)}")
+                elif 2 <= slot <= 5:
+                    cue_num = slot - 1
+                    prefix = f"C{cue_num}:"
+                    send = ch.sends.get(slot)
+                    if send and send.bypass:
+                        row2_slots.append(f"{prefix} BYP")
+                    else:
+                        db_val = send.gain_db if send else -144.0
+                        s_db = format_compact_db(db_val)
+                        row2_slots.append(f"{prefix}{s_db.rjust(4)}")
+                elif slot == 6:
+                    if ch.mute:
+                        row2_slots.append("OUT:MUT")
+                    else:
+                        s_db = format_compact_db(ch.fader_db)
+                        row2_slots.append(f"OUT{s_db.rjust(4)}")
+                elif slot == 7:
+                    eff_pan = self.uad.get_effective_pan(self.sends_focus_channel)
+                    if is_aux or abs(eff_pan) < 0.03:
+                        row2_slots.append("PAN   C")
+                    elif eff_pan < 0:
+                        row2_slots.append(f"PAN L{int(abs(eff_pan) * 100):02d}")
+                    else:
+                        row2_slots.append(f"PAN R{int(eff_pan * 100):02d}")
+            row2 = "".join(row2_slots)
+            if row2 != self._last_row2_text:
+                self._last_row2_text = row2
+                self.send_lcd_text(2, row2)
+
+    def _handle_sends_focus_fader(self, slot: int, tapered: float):
+        """Handle physical fader movements in Sends Focus Mode."""
+        ch = self.uad.channels.get(self.sends_focus_channel)
+        if not ch:
+            return
+        ch_name = ch.name.strip() or f"Channel {self.sends_focus_channel + 1}"
+        is_aux = (getattr(ch, "ch_type", "input") == "aux")
+
+        if 0 <= slot <= 5:
+            if is_aux and slot < 2:
+                self.send_fader_position(slot, 0.0)
+                return
+            send_idx = slot
+            self.uad.set_send_gain(self.sends_focus_channel, send_idx, tapered)
+            send = ch.sends.setdefault(send_idx, UADSend(send_idx))
+            send.gain = tapered
+            send.gain_db = tapered_to_db(tapered)
+            info = self.get_send_info(send_idx)
+            db_speech = format_db_speech(send.gain_db)
+            self.voice.speak_debounced(f"{ch_name} {info['name']} {db_speech}", delay=0.35)
+            self.refresh_sends_focus_surface()
+        elif slot == 6:
+            self.uad.set_fader(self.sends_focus_channel, tapered)
+            ch.fader = tapered
+            ch.fader_db = tapered_to_db(tapered)
+            db_speech = format_db_speech(ch.fader_db)
+            self.voice.speak_debounced(f"{ch_name} output {db_speech}", delay=0.35)
+            self.refresh_sends_focus_surface()
+        elif slot == 7:
+            new_pan = max(-1.0, min(1.0, (tapered * 2.0) - 1.0))
+            self.uad.set_channel_stereo_pan(self.sends_focus_channel, new_pan)
+            self.send_vpot_led_ring(7, new_pan)
+            self.send_vpot_led_ring(6, new_pan)
+            pan_speech = format_channel_pan_speech(ch)
+            self.voice.speak_debounced(f"{ch_name} pan {pan_speech}", delay=0.35)
+            self.refresh_sends_focus_surface()
+
+    def _handle_sends_focus_vpot(self, slot: int, delta: int):
+        """Handle rotary V-Pot encoder turns in Sends Focus Mode."""
+        ch = self.uad.channels.get(self.sends_focus_channel)
+        if not ch:
+            return
+        ch_name = ch.name.strip() or f"Channel {self.sends_focus_channel + 1}"
+        is_aux = (getattr(ch, "ch_type", "input") == "aux")
+
+        if 0 <= slot <= 5:
+            if is_aux:
+                return
+            send_idx = slot
+            send = ch.sends.setdefault(send_idx, UADSend(send_idx))
+            current_pan = send.pan
+            new_pan = max(-1.0, min(1.0, current_pan + (delta * 0.02)))
+            self.uad.set_send_pan(self.sends_focus_channel, send_idx, new_pan)
+            send.pan = new_pan
+            self.send_vpot_led_ring(slot, new_pan)
+            info = self.get_send_info(send_idx)
+            pan_speech = format_pan_speech(new_pan)
+            self.voice.speak_debounced(f"{ch_name} {info['name']} pan {pan_speech}", delay=0.35)
+            self.refresh_sends_focus_surface()
+        elif slot in (6, 7):
+            if is_aux:
+                return
+            current_pan = self.uad.get_effective_pan(self.sends_focus_channel)
+            new_pan = max(-1.0, min(1.0, current_pan + (delta * 0.02)))
+            self.uad.set_channel_stereo_pan(self.sends_focus_channel, new_pan)
+            self.send_vpot_led_ring(7, new_pan)
+            self.send_vpot_led_ring(6, new_pan)
+            self.send_fader_position(7, (new_pan + 1.0) / 2.0)
+            pan_speech = format_channel_pan_speech(ch)
+            self.voice.speak_debounced(f"{ch_name} pan {pan_speech}", delay=0.35)
+            self.refresh_sends_focus_surface()
+
+    def _handle_sends_focus_sel(self, slot: int):
+        """Query parameter in Sends Focus Mode."""
+        ch = self.uad.channels.get(self.sends_focus_channel)
+        if not ch:
+            return
+        ch_name = ch.name.strip() or f"Channel {self.sends_focus_channel + 1}"
+        is_aux = (getattr(ch, "ch_type", "input") == "aux")
+
+        if 0 <= slot <= 5:
+            info = self.get_send_info(slot)
+            if is_aux and slot < 2:
+                self.voice.speak(f"{ch_name}, {info['name']}, no send")
+            else:
+                send = ch.sends.get(slot)
+                gain_db = send.gain_db if send else -144.0
+                byp = send.bypass if send else False
+                byp_str = ", bypassed" if byp else ""
+                pan_str = f", {format_pan_speech(send.pan)}" if not is_aux else ""
+                self.voice.speak(f"{ch_name}, {info['name']}, {format_db_speech(gain_db)}{pan_str}{byp_str}")
+        elif slot == 6:
+            stat_str = ", muted" if ch.mute else (", soloed" if ch.solo else "")
+            self.voice.speak(f"{ch_name}, Output, {format_db_speech(ch.fader_db)}{stat_str}")
+        elif slot == 7:
+            self.voice.speak(f"{ch_name}, Pan {format_channel_pan_speech(ch)}")
+
+    def _handle_sends_focus_note(self, note: int, is_down: bool):
+        """Handle MCU buttons when in Sends Focus Mode."""
+        if not is_down:
+            return
+
+        ch = self.uad.channels.get(self.sends_focus_channel)
+        if not ch:
+            return
+        ch_name = ch.name.strip() or f"Channel {self.sends_focus_channel + 1}"
+        is_aux = (getattr(ch, "ch_type", "input") == "aux")
+
+        # Navigation in Sends Mode: Bank L/R (46/47, 98/99), Page L/R (48/49, 44/45, 104/105)
+        is_wheel_rotation = self._wheel_strobe_active or (time.time() - self._last_wheel_strobe < 0.20)
+        if (is_wheel_rotation and note in (46, 47, 48, 49)) or note in (46, 47, 48, 49, 44, 45, 98, 99, 104, 105):
+            direction = -1 if note in (46, 48, 44, 98, 104) else 1
+            self.step_sends_channel(direction)
+            return
+
+        # V-Pot Push: 0x20..0x27 (32..39) -> Center pan
+        if 32 <= note <= 39:
+            slot = note - 32
+            if 0 <= slot <= 5:
+                if is_aux:
+                    return
+                self.uad.set_send_pan(self.sends_focus_channel, slot, 0.0)
+                send = ch.sends.setdefault(slot, UADSend(slot))
+                send.pan = 0.0
+                self.send_vpot_led_ring(slot, 0.0)
+                info = self.get_send_info(slot)
+                self.voice.speak(f"{ch_name} {info['name']} pan centered")
+                self.refresh_sends_focus_surface()
+            elif slot in (6, 7):
+                if is_aux:
+                    return
+                self.uad.reset_pan(self.sends_focus_channel)
+                self.send_vpot_led_ring(7, 0.0)
+                self.send_vpot_led_ring(6, 0.0)
+                self.send_fader_position(7, 0.5)
+                self.voice.speak(f"{ch_name} pan centered")
+                self.refresh_sends_focus_surface()
+            return
+
+        # Mute Buttons: 0x10..0x17 (16..23) -> Toggle Send Bypass (0..5) or Channel Mute (6)
+        if 16 <= note <= 23:
+            slot = note - 16
+            if 0 <= slot <= 5:
+                if is_aux and slot < 2:
+                    return
+                send = ch.sends.setdefault(slot, UADSend(slot))
+                new_byp = not send.bypass
+                self.uad.set_send_bypass(self.sends_focus_channel, slot, new_byp)
+                send.bypass = new_byp
+                self.send_mute_led(slot, new_byp)
+                info = self.get_send_info(slot)
+                byp_str = "bypassed" if new_byp else "active"
+                self.voice.speak(f"{ch_name} {info['name']} send {byp_str}")
+                self.refresh_sends_focus_surface()
+            elif slot == 6:
+                new_mute = not ch.mute
+                self.uad.set_mute(self.sends_focus_channel, new_mute)
+                ch.mute = new_mute
+                self.send_mute_led(6, new_mute)
+                mute_str = "muted" if new_mute else "unmuted"
+                self.voice.speak(f"{ch_name} {mute_str}")
+                self.refresh_sends_focus_surface()
+            elif slot == 7:
+                self.uad.reset_pan(self.sends_focus_channel)
+                self.send_vpot_led_ring(7, 0.0)
+                self.send_vpot_led_ring(6, 0.0)
+                self.send_fader_position(7, 0.5)
+                self.voice.speak(f"{ch_name} pan centered")
+                self.refresh_sends_focus_surface()
+            return
+
+        # Solo Buttons: 0x08..0x0F (8..15) -> Toggle Channel Solo (6)
+        if 8 <= note <= 15:
+            slot = note - 8
+            if slot == 6:
+                new_solo = not ch.solo
+                self.uad.set_solo(self.sends_focus_channel, new_solo)
+                ch.solo = new_solo
+                self.send_solo_led(6, new_solo)
+                solo_str = "solo on" if new_solo else "solo off"
+                self.voice.speak(f"{ch_name} {solo_str}")
+                self.refresh_sends_focus_surface()
+            return
+
     # --- Plugin & Preamp Mode (Supporting Unison Preamp & Regular Inserts) ---
 
     def clean_plugin_name(self, raw_name: str) -> str:
         """Clean plug-in name for display and voice synthesis."""
         if not raw_name or raw_name.strip() in ("", "None"):
             return ""
-        name = raw_name.replace("Universal Audio ", "").replace("UAD ", "").replace("Legacy", "").strip()
+        name = raw_name
+        for prefix in ("Universal Audio ", "UAD ", "Teletronix ", "UA "):
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+        name = name.replace(" Legacy", "").replace(" Classic", "").strip()
         return name
+
+    def _spoken_db(self, val_str: str) -> str:
+        """Convert a dB string value (e.g. '-6.0 dB', '+2.5', or '-oo') into natural speech."""
+        if not val_str:
+            return ""
+        s = val_str.replace("dB", "").replace("db", "").replace("DB", "").strip()
+        try:
+            val = float(s)
+            return format_db_speech(val)
+        except (ValueError, TypeError):
+            return re.sub(r'(\d|\b)dB\b', r'\1 d B', val_str, flags=re.IGNORECASE)
 
     def format_channel_plugin_talkback(self, ch: Optional[UADChannel], prefix: str = "Plugin mode: ") -> str:
         """Generate talkback voice text according to channel capabilities."""
@@ -1445,6 +2114,85 @@ class MCUEngine:
             else:
                 return f"{prefix}{ch_name}, no plugins"
 
+    def format_sound_critical_param_speech(self, slot_info: dict, eff: Optional[UADEffect], param: Optional[UADEffectParam], strip_idx: int = 0) -> str:
+        """Format rich sound-focused spoken feedback for SEL button press in Plugin Mode."""
+        if not eff or not eff.name or eff.name.strip() in ("", "None"):
+            return f"{slot_info.get('label', 'Slot')}, Empty, no plug-in inserted"
+
+        p_clean = self.clean_plugin_name(eff.name)
+        slot_label = slot_info.get("label", "Slot")
+
+        if not param:
+            return f"{slot_label} {p_clean}, Strip {strip_idx + 1}, no parameter"
+
+        p_name = param.name.strip()
+        val_str = str(param.str_val).strip()
+        p_lower = p_name.lower()
+        val_lower = val_str.lower()
+
+        # 1. Section categorization based on sonic function
+        section = ""
+        if any(k in p_lower for k in ("eq", "filter", "freq", "frequency", "low cut", "hi cut", "treble", "bass", "mid", "bell", "shelf", "q")):
+            section = "EQ section"
+        elif any(k in p_lower for k in ("attack", "release", "ratio", "thresh", "threshold", "knee", "comp", "compress", "limit", "meter", "makeup", "gr", "peak red")):
+            section = "Dynamics section"
+        elif any(k in p_lower for k in ("delay", "decay", "feedback", "predelay", "rate", "depth", "reverb", "room", "mix", "blend", "chorus", "flange")):
+            section = "Time and Space section"
+        elif any(k in p_lower for k in ("input", "pad", "phase", "polarity", "select", "source", "impedance", "hiz", "mic", "line", "preamp", "gain")):
+            section = "Preamp section"
+        elif any(k in p_lower for k in ("level", "output", "drive", "master", "volume", "power", "headroom")):
+            section = "Output section"
+
+        # 2. Sonic Value Speech Formatting
+        speech_val = val_str
+
+        # Ratios (e.g. 4:1, 20:1, All)
+        if ":" in speech_val:
+            num = speech_val.split(":")[0].strip()
+            speech_val = f"{num} to 1"
+            if num in ("2", "3", "4"):
+                speech_val += ", moderate compression"
+            elif num in ("8", "12"):
+                speech_val += ", heavy compression"
+            elif num in ("20",):
+                speech_val += ", limiting"
+        elif val_lower in ("all", "all buttons", "all-in"):
+            speech_val = "All buttons in, aggressive overdrive limiting"
+        # Decibels (e.g. -24.00, +3.00, 0.00 dB)
+        elif "db" in val_lower or (val_str.startswith(("-", "+")) and any(c.isdigit() for c in val_str)):
+            clean_num = val_str.replace("dB", "").replace("db", "").strip()
+            try:
+                v_num = float(clean_num)
+                if v_num < 0:
+                    speech_val = f"minus {abs(v_num):.1f} d B"
+                elif v_num > 0:
+                    speech_val = f"plus {v_num:.1f} d B"
+                else:
+                    speech_val = "zero d B, unity gain"
+            except ValueError:
+                pass
+        # Meters (e.g. GR, +4, +8)
+        elif val_str.upper() == "GR":
+            speech_val = "Gain Reduction meter"
+        elif val_str in ("+4", "+8"):
+            speech_val = f"{val_str} V U meter"
+        # Frequencies (e.g. 100Hz, 12kHz)
+        elif "khz" in val_lower:
+            speech_val = val_str.replace("kHz", " kiloHertz").replace("khz", " kiloHertz")
+        elif "hz" in val_lower:
+            speech_val = val_str.replace("Hz", " Hertz").replace("hz", " Hertz")
+        # Polarity / Phase
+        elif p_lower in ("polarity", "phase"):
+            if val_str in ("0", "Normal", "Off"):
+                speech_val = "Normal phase"
+            elif val_str in ("180", "Invert", "On", "1"):
+                speech_val = "Inverted phase 180 degrees"
+
+        sec_text = f", {section}" if section else ""
+        byp_warning = ", Warning: plug-in is bypassed" if not eff.power else ""
+
+        return f"{slot_label} {p_clean}{sec_text}: {p_name}, {speech_val}{byp_warning}"
+
     def get_plugin_channels(self) -> List[int]:
         """Return all valid input channels that can be inspected in Plugin Mode."""
         input_ids = [
@@ -1460,56 +2208,616 @@ class MCUEngine:
         return self.get_plugin_channels()
 
     def toggle_preamp_focus_mode(self, target_ch: Optional[int] = None):
-        """Toggle Plugin Mode (with Unison Preamp & Insert Control)."""
+        """Toggle Preamp Focus Mode (with Unison Preamp & Hardware Preamp Control)."""
         if self.preamp_focus_mode:
             self.preamp_focus_mode = False
             self.send_midi(bytes([0x90, 40, 0x00]))  # CHANNEL LED off
-            self.send_midi(bytes([0x90, 43, 0x00]))  # PLUG-IN LED off
             for m in self.marquees:
                 m.reset()
             self.refresh_all_slots()
-            self.show_temp_hud(">>> EXIT PLUGIN MODE <<<", duration=1.2)
-            self.voice.speak("Exiting plugin mode, Main mix")
-            print("[MCU] Exited Plugin Mode -> Returned to Main Mix")
+            self.show_temp_hud(">>> EXIT PREAMP MODE <<<", duration=1.2)
+            self.voice.speak("Exiting preamp focus, Main mix")
+            print("[MCU] Exited Preamp Mode -> Returned to Main Mix")
+            return
+
+        if self.plugin_focus_mode:
+            self.plugin_focus_mode = False
+            self.send_midi(bytes([0x90, 43, 0x00]))  # PLUG-IN LED off
+        if self.sends_focus_mode:
+            self.sends_focus_mode = False
+            self.send_flip_led(False)
+            self.send_midi(bytes([0x90, 41, 0x00]))
+        if self.active_send_idx is not None:
+            self.active_send_idx = None
+            self.send_flip_led(False)
+
+        preamp_channels = self.get_preamp_channels()
+        if not preamp_channels:
+            self.voice.speak("No channels available for preamp mode")
+            return
+
+        if target_ch is not None and target_ch in preamp_channels:
+            candidate = target_ch
+        elif self.selected_slot is not None and (self.bank_offset + self.selected_slot) in preamp_channels:
+            candidate = self.bank_offset + self.selected_slot
+        elif self.bank_offset in preamp_channels:
+            candidate = self.bank_offset
         else:
-            # If in send mode, turn it off
-            if self.active_send_idx is not None:
-                self.active_send_idx = None
-                self.send_flip_led(False)
+            candidate = preamp_channels[0]
 
-            plugin_channels = self.get_plugin_channels()
-            if not plugin_channels:
-                self.voice.speak("No channels available for plugin mode")
-                return
+        self.preamp_focus_mode = True
+        self.preamp_focus_channel = candidate
+        self._48v_arm_time = 0.0
 
-            if target_ch is not None and target_ch in plugin_channels:
-                candidate = target_ch
-            elif self.selected_slot is not None and (self.bank_offset + self.selected_slot) in plugin_channels:
-                candidate = self.bank_offset + self.selected_slot
-            elif self.bank_offset in plugin_channels:
-                candidate = self.bank_offset
+        # Light up CHANNEL LED, ensure PLUG-IN LED is off
+        self.send_midi(bytes([0x90, 40, 0x7F]))
+        self.send_midi(bytes([0x90, 43, 0x00]))
+
+        ch = self.uad.channels.get(candidate)
+        ch_name = ch.name.strip() if ch else f"Channel {candidate + 1}"
+        hud_title = "UNISON PREAMP" if (ch and ch.preamp.has_preamp) else "PREAMP MODE"
+        self.show_temp_hud(f">>> {hud_title}: {ch_name.upper()} <<<", duration=1.5)
+        self.voice.speak(self.format_channel_plugin_talkback(ch, prefix="Preamp mode: "))
+        print(f"[MCU] Entered Preamp Mode on channel {candidate} ({ch_name})")
+        self.refresh_preamp_focus_surface()
+
+    # --- Dedicated INSERT / Plug-in Focus Mode (8 Insert Slots across 8 Physical Strips) ---
+
+    # --- Dedicated Plug-in & Insert Parameter Mode (Values across 8 Strips) ---
+
+    def toggle_plugin_focus_mode(self, target_ch: Optional[int] = None):
+        """Toggle Plug-in Focus Mode for selected channel.
+        - Unison channels: start at Slot 0 (UNISON).
+        - Non-Unison channels: start at Slot 0 (Insert 1).
+        - Physical strips 1..8 control focused plugin parameters.
+        - Number keys 1..8 on UF8 switch plugins / toggle UAD REC/MON.
+        """
+        if self.plugin_focus_mode:
+            self.plugin_focus_mode = False
+            self.send_midi(bytes([0x90, 43, 0x00]))  # PLUG-IN LED off
+            self.update_plugin_slot_leds()
+            for m in self.marquees:
+                m.reset()
+            self.refresh_all_slots()
+            self.show_temp_hud(">>> EXIT INSERTS <<<", duration=1.2)
+            self.voice.speak("Exiting plugin mode, Main mix")
+            print("[MCU] Exited Plugin Focus Mode -> Returned to Main Mix")
+            return
+
+        if self.preamp_focus_mode:
+            self.preamp_focus_mode = False
+            self.send_midi(bytes([0x90, 40, 0x00]))  # CHANNEL LED off
+        if self.sends_focus_mode:
+            self.sends_focus_mode = False
+            self.send_flip_led(False)
+            self.send_midi(bytes([0x90, 41, 0x00]))  # SEND LED off
+        if self.active_send_idx is not None:
+            self.active_send_idx = None
+            self.send_flip_led(False)
+
+        valid_channels = sorted(self.uad.channels.keys())
+        if not valid_channels:
+            self.voice.speak("No channels available for plugin mode")
+            return
+
+        if target_ch is not None and target_ch in valid_channels:
+            candidate = target_ch
+        elif self.selected_slot is not None and (self.bank_offset + self.selected_slot) in valid_channels:
+            candidate = self.bank_offset + self.selected_slot
+        elif self.bank_offset in valid_channels:
+            candidate = self.bank_offset
+        else:
+            candidate = valid_channels[0]
+
+        self.plugin_focus_mode = True
+        self.plugin_focus_channel = candidate
+        # Starts from Unison if Unison channel, or Insert 1 if non-Unison channel
+        self.plugin_focus_slot_idx = 0
+        self.plugin_param_page = 0
+        self.send_midi(bytes([0x90, 43, 0x7F]))  # PLUG-IN LED on
+        self.send_midi(bytes([0x90, 40, 0x00]))  # CHANNEL LED off
+
+        ch = self.uad.channels.get(candidate)
+        ch_name = ch.name.strip() if ch else f"Channel {candidate + 1}"
+        slots = ch.get_plugin_slots() if ch else []
+
+        if slots and len(slots) > 0:
+            initial_slot = slots[0]
+            eff = initial_slot.get("effect")
+            has_fx = bool(eff and eff.name and eff.name.strip() and eff.name != "None")
+            if has_fx:
+                p_clean = self.clean_plugin_name(eff.name)
+                state_str = "on" if getattr(eff, "power", True) else "off"
+                self.show_temp_hud(f">>> {initial_slot['label'].upper()}: {p_clean.upper()} ({state_str.upper()}) <<<", duration=1.5)
+                self.voice.speak(f"{ch_name} {initial_slot['label']}: {p_clean}, {state_str}")
+                self.uad.load_effect_parameters(candidate, eff, initial_slot["eff_path"])
             else:
-                candidate = plugin_channels[0]
+                self.show_temp_hud(f">>> {initial_slot['label'].upper()}: EMPTY <<<", duration=1.2)
+                self.voice.speak(f"{ch_name} {initial_slot['label']}, Empty")
+        else:
+            self.show_temp_hud(f">>> INSERTS: {ch_name.upper()} <<<", duration=1.2)
+            self.voice.speak(f"{ch_name} inserts")
 
-            self.preamp_focus_mode = True
-            self.preamp_focus_channel = candidate
-            self._48v_arm_time = 0.0
-
-            # Light up CHANNEL & PLUG-IN LEDs
-            self.send_midi(bytes([0x90, 40, 0x7F]))
-            self.send_midi(bytes([0x90, 43, 0x7F]))
-
-            ch = self.uad.channels.get(candidate)
-            ch_name = ch.name.strip() if ch else f"Channel {candidate + 1}"
-            hud_title = "UNISON PREAMP" if (ch and ch.preamp.has_preamp) else "PLUGIN MODE"
-            self.show_temp_hud(f">>> {hud_title}: {ch_name.upper()} <<<", duration=1.5)
-            self.voice.speak(self.format_channel_plugin_talkback(ch, prefix="Plugin mode: "))
-            print(f"[MCU] Entered Plugin Mode on channel {candidate} ({ch_name})")
-            self.refresh_preamp_focus_surface()
+        print(f"[MCU] Entered Plugin Focus Mode on channel {candidate} ({ch_name}) starting at slot 0")
+        self.update_plugin_slot_leds()
+        self.refresh_plugin_focus_surface()
 
     def toggle_plugin_mode(self, target_ch: Optional[int] = None):
-        """Semantic alias for toggle_preamp_focus_mode."""
-        self.toggle_preamp_focus_mode(target_ch)
+        """Semantic alias for toggle_plugin_focus_mode."""
+        self.toggle_plugin_focus_mode(target_ch)
+
+    def update_plugin_slot_leds(self):
+        """Update LEDs on SSL UF8 SEND/PLUGIN keys 1..8 (Notes 62..69 and 54..61)."""
+        for s in range(8):
+            is_active = (s == self.plugin_focus_slot_idx) if self.plugin_focus_mode else False
+            val = 0x7F if is_active else 0x00
+            self.send_midi(bytes([0x90, 62 + s, val]))
+            self.send_midi(bytes([0x90, 54 + s, val]))
+
+    def select_plugin_slot(self, slot_idx: int):
+        """Select a plugin slot (0..7) on the active channel via SSL UF8 number keys.
+        - Slot 0..6: Unison / Insert slots.
+        - Slot 7: UAD REC / MON mode toggle.
+        """
+        ch = self.uad.channels.get(self.plugin_focus_channel)
+        if not ch:
+            return
+        slots = ch.get_plugin_slots()
+        if not (0 <= slot_idx < len(slots)):
+            return
+
+        slot_info = slots[slot_idx]
+
+        if slot_info["type"] == "rec_mon":
+            # If user pressed slot 8 when already on slot 8, toggle mode; else select and announce
+            if self.plugin_focus_slot_idx == slot_idx:
+                new_mon = self.uad.toggle_record_pre_effects(self.plugin_focus_channel)
+                if new_mon:
+                    self.show_temp_hud(">>> UAD MON: RECORD DRY <<<", duration=1.5)
+                    self.voice.speak("UAD Monitor mode, recording dry")
+                else:
+                    self.show_temp_hud(">>> UAD REC: PRINT WET <<<", duration=1.5)
+                    self.voice.speak("UAD Record mode, printing effects wet")
+            else:
+                self.plugin_focus_slot_idx = slot_idx
+                is_mon = ch.record_pre_effects
+                self.show_temp_hud(">>> UAD MON: RECORD DRY <<<" if is_mon else ">>> UAD REC: PRINT WET <<<", duration=1.5)
+                self.voice.speak(f"Slot 8, UAD {'Monitor mode, recording dry' if is_mon else 'Record mode, printing effects wet'}")
+            self.update_plugin_slot_leds()
+            self.refresh_plugin_focus_surface()
+            return
+
+        self.plugin_focus_slot_idx = slot_idx
+        self.plugin_param_page = 0
+        self.update_plugin_slot_leds()
+
+        eff = slot_info.get("effect")
+        has_fx = bool(eff and eff.name and eff.name.strip() and eff.name != "None")
+        if has_fx:
+            p_clean = self.clean_plugin_name(eff.name)
+            state_str = "on" if getattr(eff, "power", True) else "off"
+            self.show_temp_hud(f">>> {slot_info['label'].upper()}: {p_clean.upper()} ({state_str.upper()}) <<<", duration=1.5)
+            self.voice.speak(f"{slot_info['label']}: {p_clean}, {state_str}")
+            self.uad.load_effect_parameters(self.plugin_focus_channel, eff, slot_info["eff_path"])
+        else:
+            self.show_temp_hud(f">>> {slot_info['label'].upper()}: EMPTY <<<", duration=1.2)
+            self.voice.speak(f"{slot_info['label']}, Empty")
+
+        self.refresh_plugin_focus_surface()
+
+    def step_plugin_channel(self, delta: int):
+        """Step to previous or next channel in Plugin Focus Mode."""
+        valid_channels = sorted(self.uad.channels.keys())
+        if not valid_channels:
+            return
+        try:
+            curr_idx = valid_channels.index(self.plugin_focus_channel)
+        except ValueError:
+            curr_idx = 0
+
+        new_idx = max(0, min(len(valid_channels) - 1, curr_idx + delta))
+        if new_idx != curr_idx:
+            self.plugin_focus_channel = valid_channels[new_idx]
+            self.plugin_focus_slot_idx = 0
+            self.plugin_param_page = 0
+            ch = self.uad.channels.get(self.plugin_focus_channel)
+            ch_name = ch.name.strip() if ch else f"Channel {self.plugin_focus_channel + 1}"
+            slots = ch.get_plugin_slots() if ch else []
+            if slots:
+                first_slot = slots[0]
+                eff = first_slot.get("effect")
+                has_fx = bool(eff and eff.name and eff.name.strip() and eff.name != "None")
+                if has_fx:
+                    p_clean = self.clean_plugin_name(eff.name)
+                    state_str = "on" if getattr(eff, "power", True) else "off"
+                    self.show_temp_hud(f">>> {ch_name.upper()}: {p_clean.upper()} ({state_str.upper()}) <<<", duration=1.2)
+                    self.voice.speak_debounced(f"Focused on {ch_name}, {first_slot['label']}: {p_clean}, {state_str}", delay=0.25)
+                    self.uad.load_effect_parameters(self.plugin_focus_channel, eff, first_slot["eff_path"])
+                else:
+                    self.show_temp_hud(f">>> {ch_name.upper()}: EMPTY <<<", duration=1.2)
+                    self.voice.speak_debounced(f"Focused on {ch_name}, {first_slot['label']}, Empty", delay=0.25)
+            self.refresh_plugin_focus_surface()
+        else:
+            if delta > 0:
+                self.voice.speak_debounced("Last channel", delay=0.25)
+            else:
+                self.voice.speak_debounced("First channel", delay=0.25)
+
+    def refresh_plugin_focus_surface(self):
+        """Update 8 physical strips with parameter values of the focused plug-in (or UAD REC/MON)."""
+        ch = self.uad.channels.get(self.plugin_focus_channel)
+        if not ch:
+            return
+
+        slots = ch.get_plugin_slots()
+        slot_idx = max(0, min(len(slots) - 1, self.plugin_focus_slot_idx))
+        slot_info = slots[slot_idx]
+
+        row1_slots = []
+        row2_slots = []
+
+        # Case 1: Slot 7 is UAD REC / MON mode selection
+        if slot_info["type"] == "rec_mon":
+            is_mon = ch.record_pre_effects
+            for s in range(self.num_slots):
+                if s == 7:
+                    row1_slots.append("UAD REC")
+                    row2_slots.append("  MON  " if is_mon else "  REC  ")
+                    self.send_fader_position(s, 0.0 if is_mon else 1.0)
+                    self.send_mute_led(s, is_mon)
+                    self.send_solo_led(s, False)
+                    self.send_sel_led(s, True)
+                    self.send_midi(bytes([0xB0, 48 + s, 1 if is_mon else 11]))
+                else:
+                    row1_slots.append(f"{ch.name[:7]:^7}")
+                    row2_slots.append("DRY MON" if is_mon else "PRINTED")
+                    self.send_fader_position(s, 0.0)
+                    self.send_mute_led(s, False)
+                    self.send_solo_led(s, False)
+                    self.send_sel_led(s, False)
+                    self.send_midi(bytes([0xB0, 48 + s, 0]))
+
+            row1_text = "".join(f"{s:^7}"[:7] for s in row1_slots)
+            if row1_text != self._last_row1_text:
+                self._last_row1_text = row1_text
+                self.send_lcd_text(1, row1_text)
+
+            row2_text = "".join(f"{v:^7}"[:7] for v in row2_slots)
+            if row2_text != self._last_row2_text and not self._hud_active:
+                self._last_row2_text = row2_text
+                self.send_lcd_text(2, row2_text)
+            return
+
+        # Case 2: Plug-in Slot (Unison or Insert 1..7)
+        eff = slot_info.get("effect")
+        has_fx = bool(eff and eff.name and eff.name.strip() and eff.name != "None")
+
+        if not has_fx:
+            # Empty slot: Say Empty, lower all faders
+            for s in range(self.num_slots):
+                if s == 0:
+                    row1_slots.append(f"{slot_info['short_label']:^7}")
+                    row2_slots.append(" Empty ")
+                else:
+                    row1_slots.append("       ")
+                    row2_slots.append("       ")
+                self.send_fader_position(s, 0.0)
+                self.send_mute_led(s, False)
+                self.send_solo_led(s, False)
+                self.send_sel_led(s, False)
+                self.send_midi(bytes([0xB0, 48 + s, 0]))
+        else:
+            # Strip 1 (s == 0): Plug-in name as main text, dedicated Plug-in Power (On / Off) as main function
+            is_on = bool(eff.power)
+            p_clean_name = format_plugin_name_7char(eff.name)
+            row1_slots.append(f"{p_clean_name[:7]:^7}")
+            row2_slots.append("  ON   " if is_on else "  OFF  ")
+            self.send_fader_position(0, 1.0 if is_on else 0.0)
+            self.send_mute_led(0, not is_on)  # Red MUTE tally when bypassed/off
+            self.send_solo_led(0, False)
+            self.send_sel_led(0, is_on)       # White SEL tally when active/on
+            self.send_midi(bytes([0xB0, 48, 11 if is_on else 1]))
+
+            # Strips 2..8 (s in 1..7): 7 parameters per page
+            base_p = self.plugin_param_page * 7
+            for s in range(1, self.num_slots):
+                p_idx = base_p + (s - 1)
+                param = eff.parameters.get(p_idx)
+                if param:
+                    clean_pname = format_param_name_7char(param.name)
+                    row1_slots.append(f"{clean_pname[:7]:^7}")
+                    row2_slots.append(f"{param.str_val[:7]:^7}")
+                    self.send_fader_position(s, param.norm_val)
+                    ring_val = max(1, min(11, int(round(param.norm_val * 10)) + 1)) if param.norm_val > 0.01 else 1
+                    self.send_midi(bytes([0xB0, 48 + s, ring_val]))
+                    self.send_sel_led(s, True)
+                    self.send_mute_led(s, not is_on)
+                    self.send_solo_led(s, False)
+                else:
+                    row1_slots.append("       ")
+                    row2_slots.append("       ")
+                    self.send_fader_position(s, 0.0)
+                    self.send_mute_led(s, False)
+                    self.send_solo_led(s, False)
+                    self.send_sel_led(s, False)
+                    self.send_midi(bytes([0xB0, 48 + s, 0]))
+
+        row1_text = "".join(f"{s:^7}"[:7] for s in row1_slots)
+        if row1_text != self._last_row1_text:
+            self._last_row1_text = row1_text
+            self.send_lcd_text(1, row1_text)
+
+        row2_text = "".join(f"{v:^7}"[:7] for v in row2_slots)
+        if row2_text != self._last_row2_text and not self._hud_active:
+            self._last_row2_text = row2_text
+            self.send_lcd_text(2, row2_text)
+
+    def _handle_plugin_focus_fader(self, slot: int, tapered: float):
+        """Handle physical motorized fader movements in Plugin Focus Mode."""
+        ch = self.uad.channels.get(self.plugin_focus_channel)
+        if not ch or not (0 <= slot < self.num_slots):
+            return
+
+        slots = ch.get_plugin_slots()
+        slot_idx = max(0, min(len(slots) - 1, self.plugin_focus_slot_idx))
+        slot_info = slots[slot_idx]
+
+        if slot_info["type"] == "rec_mon":
+            is_mon = (tapered < 0.5)
+            if is_mon != ch.record_pre_effects:
+                self.uad.set_record_pre_effects(self.plugin_focus_channel, is_mon)
+                self.voice.speak_debounced("UAD Monitor dry" if is_mon else "UAD Record wet", delay=0.35)
+                self.refresh_plugin_focus_surface()
+            return
+
+        eff = slot_info.get("effect")
+        if not eff:
+            self.send_fader_position(slot, 0.0)
+            return
+
+        # Strip 1: Dedicated Plug-in On/Off Fader
+        if slot == 0:
+            new_on = (tapered >= 0.5)
+            if new_on != eff.power:
+                self.uad.set_effect_power(self.plugin_focus_channel, eff, new_on)
+                p_name = self.clean_plugin_name(eff.name)
+                self.voice.speak_debounced(f"{p_name} {'on' if new_on else 'off'}", delay=0.25)
+                self.refresh_plugin_focus_surface()
+            return
+
+        # Strips 2..8: Parameter Faders (7 per page)
+        p_idx = (self.plugin_param_page * 7) + (slot - 1)
+        param = eff.parameters.get(p_idx)
+        if param:
+            self._active_adjusting_param = (self.plugin_focus_channel, p_idx)
+            self.uad.set_effect_parameter(self.plugin_focus_channel, eff, p_idx, tapered)
+            self.refresh_plugin_focus_surface()
+            # Fallback debounce in case TCP confirmation takes longer
+            clean_str = param.str_val
+            clean_speech = self._spoken_db(clean_str) if "db" in clean_str.lower() else clean_str
+            self.voice.speak_debounced(f"{param.name} {clean_speech}", delay=0.35)
+        else:
+            self.send_fader_position(slot, 0.0)
+
+    def _handle_plugin_focus_vpot(self, slot: int, delta: int):
+        """Handle rotary V-Pot turns in Plugin Focus Mode."""
+        ch = self.uad.channels.get(self.plugin_focus_channel)
+        if not ch or not (0 <= slot < self.num_slots):
+            return
+
+        slots = ch.get_plugin_slots()
+        slot_idx = max(0, min(len(slots) - 1, self.plugin_focus_slot_idx))
+        slot_info = slots[slot_idx]
+
+        if slot_info["type"] == "rec_mon":
+            new_mon = (delta < 0)
+            if new_mon != ch.record_pre_effects:
+                self.uad.set_record_pre_effects(self.plugin_focus_channel, new_mon)
+                self.voice.speak_debounced("UAD Monitor dry" if new_mon else "UAD Record wet", delay=0.35)
+                self.refresh_plugin_focus_surface()
+            return
+
+        eff = slot_info.get("effect")
+        if not eff:
+            return
+
+        # Strip 1: Dedicated Plug-in On/Off V-Pot
+        if slot == 0:
+            new_on = (delta > 0)
+            if new_on != eff.power:
+                self.uad.set_effect_power(self.plugin_focus_channel, eff, new_on)
+                p_name = self.clean_plugin_name(eff.name)
+                self.voice.speak_debounced(f"{p_name} {'on' if new_on else 'off'}", delay=0.25)
+                self.refresh_plugin_focus_surface()
+            return
+
+        # Strips 2..8: Parameter V-Pots (7 per page)
+        p_idx = (self.plugin_param_page * 7) + (slot - 1)
+        param = eff.parameters.get(p_idx)
+        if param:
+            step = 0.02 * delta
+            new_norm = max(0.0, min(1.0, param.norm_val + step))
+            self._active_adjusting_param = (self.plugin_focus_channel, p_idx)
+            self.uad.set_effect_parameter(self.plugin_focus_channel, eff, p_idx, new_norm)
+            self.refresh_plugin_focus_surface()
+            # If hit min or max boundary, speak immediately
+            if new_norm <= 0.0 and delta < 0 and param.norm_val <= 0.0:
+                self.voice.speak_debounced(f"{param.name} minimum", delay=0.25)
+            elif new_norm >= 1.0 and delta > 0 and param.norm_val >= 1.0:
+                self.voice.speak_debounced(f"{param.name} maximum", delay=0.25)
+            else:
+                clean_str = param.str_val
+                clean_speech = self._spoken_db(clean_str) if "db" in clean_str.lower() else clean_str
+                self.voice.speak_debounced(f"{param.name} {clean_speech}", delay=0.35)
+
+    def _handle_plugin_focus_note(self, note: int, is_down: bool):
+        """Handle MCU buttons when in Plugin / Insert Focus Mode."""
+        if not is_down:
+            return
+
+        # FLIP Button (Note 50): Back to Main Mix
+        if note == 50:
+            self._handle_flip_button()
+            return
+
+        # Plug-in Button (Note 43): Toggle / Exit Plugin Focus Mode
+        if note == 43:
+            self.toggle_plugin_focus_mode()
+            return
+
+        # Channel Button (Note 40): Switch to Preamp Focus Mode
+        if note == 40:
+            self.toggle_preamp_focus_mode(self.plugin_focus_channel)
+            return
+
+        # Send Button (Note 41): Switch to Sends Focus Mode
+        if note == 41:
+            self.toggle_sends_focus_mode(self.plugin_focus_channel)
+            return
+
+        ch = self.uad.channels.get(self.plugin_focus_channel)
+        if not ch:
+            return
+
+        # UF8 SEND/PLUGIN Number Keys 1..8:
+        # Notes 62..69 (0x3E..0x45) or softkeys 54..61 (0x36..0x3D) switch between plugins on this channel
+        if 62 <= note <= 69:
+            self.select_plugin_slot(note - 62)
+            return
+        if 54 <= note <= 61:
+            self.select_plugin_slot(note - 54)
+            return
+
+        # Paging parameters on focused plugin: Page L/R (48/49, 44/45, 104/105)
+        if note in (48, 49, 44, 45, 104, 105):
+            slots = ch.get_plugin_slots()
+            slot_idx = max(0, min(len(slots) - 1, self.plugin_focus_slot_idx))
+            eff = slots[slot_idx].get("effect")
+            if not eff or not eff.parameters:
+                self.voice.speak("No parameters to page")
+                return
+
+            total_pages = max(1, (len(eff.parameters) + 6) // 7)
+            if note in (49, 45, 105):
+                # Page Right / Next
+                if (self.plugin_param_page + 1) < total_pages:
+                    self.plugin_param_page += 1
+                    p_name = self.clean_plugin_name(eff.name)
+                    self.show_temp_hud(f">>> {p_name.upper()} - PAGE {self.plugin_param_page + 1}/{total_pages} <<<", duration=1.2)
+                    self.voice.speak(f"Page {self.plugin_param_page + 1} of {total_pages}")
+                    self.refresh_plugin_focus_surface()
+                else:
+                    self.voice.speak("Last page")
+            else:
+                # Page Left / Prev
+                if self.plugin_param_page > 0:
+                    self.plugin_param_page -= 1
+                    p_name = self.clean_plugin_name(eff.name)
+                    self.show_temp_hud(f">>> {p_name.upper()} - PAGE {self.plugin_param_page + 1}/{total_pages} <<<", duration=1.2)
+                    self.voice.speak(f"Page {self.plugin_param_page + 1} of {total_pages}")
+                    self.refresh_plugin_focus_surface()
+                else:
+                    self.voice.speak("First page")
+            return
+
+        # Hardware Navigation: Bank L/R (46/47, 98/99) or Master Jog Wheel
+        is_wheel_rotation = self._wheel_strobe_active or (time.time() - self._last_wheel_strobe < 0.20)
+        if (is_wheel_rotation and note in (46, 47, 48, 49)) or note in (46, 47, 98, 99):
+            direction = -1 if note in (46, 98) else 1
+            self.step_plugin_channel(direction)
+            return
+
+        # Strip-specific tactile buttons (0..7)
+        slot = None
+        action = None
+
+        if 24 <= note <= 31:
+            slot = note - 24
+            action = "sel"
+        elif 16 <= note <= 23:
+            slot = note - 16
+            action = "mute"
+        elif 32 <= note <= 39:
+            slot = note - 32
+            action = "vpot_push"
+        elif 8 <= note <= 15:
+            slot = note - 8
+            action = "solo"
+
+        if slot is not None and 0 <= slot < self.num_slots:
+            slots = ch.get_plugin_slots()
+            slot_idx = max(0, min(len(slots) - 1, self.plugin_focus_slot_idx))
+            slot_info = slots[slot_idx]
+
+            if slot_info["type"] == "rec_mon":
+                # Any button on REC/MON slot toggles mode
+                new_mon = self.uad.toggle_record_pre_effects(self.plugin_focus_channel)
+                if new_mon:
+                    self.show_temp_hud(">>> UAD MON: RECORD DRY <<<", duration=1.5)
+                    self.voice.speak("UAD Monitor mode, recording dry")
+                else:
+                    self.show_temp_hud(">>> UAD REC: PRINT WET <<<", duration=1.5)
+                    self.voice.speak("UAD Record mode, printing effects wet")
+                self.refresh_plugin_focus_surface()
+                return
+
+            eff = slot_info.get("effect")
+            if not eff:
+                self.voice.speak(f"{slot_info['label']}, Empty")
+                return
+
+            # Strip 1 (slot == 0): ALWAYS Dedicated Plug-in On/Off
+            if slot == 0:
+                if action in ("mute", "vpot_push"):
+                    new_pow = self.uad.toggle_effect_power(self.plugin_focus_channel, eff)
+                    p_name = self.clean_plugin_name(eff.name)
+                    self.show_temp_hud(f">>> {p_name.upper()}: {'ON' if new_pow else 'OFF'} <<<", duration=1.2)
+                    self.voice.speak(f"{p_name} {'on' if new_pow else 'off'}")
+                    self.refresh_plugin_focus_surface()
+                elif action in ("sel", "solo"):
+                    p_name = self.clean_plugin_name(eff.name)
+                    state_str = "on" if eff.power else "off"
+                    self.show_temp_hud(f">>> {p_name.upper()}: {state_str.upper()} <<<", duration=1.5)
+                    self.voice.speak(f"{slot_info['label']}: {p_name}, {state_str}")
+                return
+
+            # Strips 2..8 (slot in 1..7): Parameter Controls (7 per page)
+            p_idx = (self.plugin_param_page * 7) + (slot - 1)
+            param = eff.parameters.get(p_idx)
+            if not param:
+                self.voice.speak("No parameter")
+                return
+
+            clean_str = param.str_val
+            clean_speech = self._spoken_db(clean_str) if "db" in clean_str.lower() else clean_str
+
+            if action in ("sel", "solo"):
+                speech_text = self.format_sound_critical_param_speech(slot_info, eff, param, strip_idx=slot)
+                p_clean = self.clean_plugin_name(eff.name) if eff else ""
+                self.show_temp_hud(f">>> {p_clean.upper()}: {param.name.upper()} = {param.str_val} <<<", duration=1.5)
+                self.voice.speak(speech_text)
+            elif action == "mute":
+                # Mute on any strip also toggles master plug-in power
+                new_pow = self.uad.toggle_effect_power(self.plugin_focus_channel, eff)
+                p_name = self.clean_plugin_name(eff.name)
+                self.show_temp_hud(f">>> {p_name.upper()}: {'ON' if new_pow else 'OFF'} <<<", duration=1.2)
+                self.voice.speak(f"{p_name} {'on' if new_pow else 'off'}")
+                self.refresh_plugin_focus_surface()
+            elif action == "vpot_push":
+                # If discrete switch / toggle param, step to next value
+                self._active_vpot_push = (self.plugin_focus_channel, p_idx)
+                if any(k in param.name.lower() for k in ("power", "pad", "phase", "polarity", "mute")):
+                    new_v = 0.0 if param.norm_val > 0.5 else 1.0
+                    self.uad.set_effect_parameter(self.plugin_focus_channel, eff, p_idx, new_v)
+                elif any(k in param.name.lower() for k in ("ratio", "meter", "select", "mode")):
+                    step = 0.25
+                    new_v = 0.0 if param.norm_val >= 0.9 else min(1.0, param.norm_val + step)
+                    self.uad.set_effect_parameter(self.plugin_focus_channel, eff, p_idx, new_v)
+                else:
+                    self._active_vpot_push = None
+                    speech_text = self.format_sound_critical_param_speech(slot_info, eff, param, strip_idx=slot)
+                    self.voice.speak(speech_text)
+                self.refresh_plugin_focus_surface()
 
     def step_preamp_channel(self, delta: int):
         """Step to previous or next channel in Plugin Mode."""
@@ -1778,8 +3086,9 @@ class MCUEngine:
 
             elif slot == 6:
                 # V-Pot 6: Output Channel Pan
-                new_pan = max(-1.0, min(1.0, ch.pan + (delta * 0.02)))
-                self.uad.set_pan(self.preamp_focus_channel, new_pan)
+                current_pan = self.uad.get_effective_pan(self.preamp_focus_channel)
+                new_pan = max(-1.0, min(1.0, current_pan + (delta * 0.02)))
+                self.uad.set_channel_stereo_pan(self.preamp_focus_channel, new_pan)
                 self.send_vpot_led_ring(6, new_pan)
         else:
             if 0 <= slot <= 5:
@@ -1792,8 +3101,9 @@ class MCUEngine:
                         p_name = self.clean_plugin_name(eff.name)
                         self.voice.speak_debounced(f"{p_name} {'active' if new_pow else 'bypassed'}", delay=0.35)
             elif slot == 6:
-                new_pan = max(-1.0, min(1.0, ch.pan + (delta * 0.02)))
-                self.uad.set_pan(self.preamp_focus_channel, new_pan)
+                current_pan = self.uad.get_effective_pan(self.preamp_focus_channel)
+                new_pan = max(-1.0, min(1.0, current_pan + (delta * 0.02)))
+                self.uad.set_channel_stereo_pan(self.preamp_focus_channel, new_pan)
                 self.send_vpot_led_ring(6, new_pan)
 
     def _handle_preamp_note(self, note: int, is_down: bool):
@@ -1823,7 +3133,7 @@ class MCUEngine:
                     self.refresh_preamp_focus_surface()
                     self.voice.speak("Preamp gain reset to 10 d B")
                 elif slot == 6:
-                    self.uad.set_pan(self.preamp_focus_channel, 0.0)
+                    self.uad.reset_pan(self.preamp_focus_channel)
                     self.send_vpot_led_ring(6, 0.0)
                     self.voice.speak("Output pan centered")
             else:
@@ -1835,7 +3145,7 @@ class MCUEngine:
                         p_name = self.clean_plugin_name(eff.name)
                         self.voice.speak(f"{p_name} {'active' if new_pow else 'bypassed'}")
                 elif slot == 6:
-                    self.uad.set_pan(self.preamp_focus_channel, 0.0)
+                    self.uad.reset_pan(self.preamp_focus_channel)
                     self.send_vpot_led_ring(6, 0.0)
                     self.voice.speak("Output pan centered")
                 elif slot == 7:

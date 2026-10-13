@@ -130,8 +130,19 @@ public enum UADCurve {
         return String(format: "%4.0f", round(db))
     }
 
-    // Apollo Console meter tick marks with refined musical dynamic range:
-    private static let meterTicks: [(threshold: Double, seg: UInt8)] = [
+    // MARK: - MCU Level Meter Curves & Sensitivity Presets
+
+    public enum MeterCurvePreset: String, CaseIterable {
+        case consoleMatch = "Console Match"             // 1:1 Apollo Console tick marks
+        case trackingSensitive = "Tracking / Sensitive" // Expanded dynamic range for tracking mics (-35 to -10 dBFS)
+        case broadcastK14 = "Broadcast / K-14"         // Reference target for mastering & broadcast headroom
+    }
+
+    /// Currently active meter sensitivity preset across the bridge
+    public static var activeMeterPreset: MeterCurvePreset = .trackingSensitive
+
+    // 1. Apollo Console meter tick marks:
+    private static let consoleTicks: [(threshold: Double, seg: UInt8)] = [
         (-54.0, 0x01),  // 1 LED: -54 dB
         (-45.0, 0x02),  // 2 LEDs: -45 dB
         (-38.0, 0x03),  // 3 LEDs: -38 dB
@@ -146,16 +157,63 @@ public enum UADCurve {
         (-0.2,  0x0C),  // 12 LEDs: 0 dB
     ]
 
-    /// Map Apollo audio dBFS to MCU 4-bit meter nibble matching Apollo Console meter ticks:
-    /// -oo (0x0), -60, -46, -36, -27, -21, -18, -15, -12, -9, -6, -3, 0 dB (0xC), CLIP (0xE)
-    public static func dbToMcuMeter(db: Double, isClip: Bool = false) -> UInt8 {
+    // 2. Tracking / Sensitive: Finer resolution between -35 dBFS and -10 dBFS where tracking signals live
+    private static let trackingTicks: [(threshold: Double, seg: UInt8)] = [
+        (-48.0, 0x01),  // 1 LED: -48 dB
+        (-42.0, 0x02),  // 2 LEDs: -42 dB
+        (-36.0, 0x03),  // 3 LEDs: -36 dB
+        (-31.0, 0x04),  // 4 LEDs: -31 dB
+        (-27.0, 0x05),  // 5 LEDs: -27 dB
+        (-23.0, 0x06),  // 6 LEDs: -23 dB (halfway up ladder!)
+        (-19.0, 0x07),  // 7 LEDs: -19 dB
+        (-15.0, 0x08),  // 8 LEDs: -15 dB
+        (-11.0, 0x09),  // 9 LEDs: -11 dB
+        (-7.0,  0x0A),  // 10 LEDs: -7 dB
+        (-3.0,  0x0B),  // 11 LEDs: -3 dB
+        (-0.2,  0x0C),  // 12 LEDs: 0 dB
+    ]
+
+    // 3. Broadcast / K-14: Calibrated around -14 dBFS standard target
+    private static let broadcastK14Ticks: [(threshold: Double, seg: UInt8)] = [
+        (-42.0, 0x01),  // 1 LED: -42 dB
+        (-36.0, 0x02),  // 2 LEDs: -36 dB
+        (-30.0, 0x03),  // 3 LEDs: -30 dB
+        (-26.0, 0x04),  // 4 LEDs: -26 dB
+        (-22.0, 0x05),  // 5 LEDs: -22 dB
+        (-19.0, 0x06),  // 6 LEDs: -19 dB
+        (-16.0, 0x07),  // 7 LEDs: -16 dB
+        (-14.0, 0x08),  // 8 LEDs: -14 dB (K-14 0 VU reference point)
+        (-10.0, 0x09),  // 9 LEDs: -10 dB
+        (-6.0,  0x0A),  // 10 LEDs: -6 dB
+        (-2.0,  0x0B),  // 11 LEDs: -2 dB
+        (-0.2,  0x0C),  // 12 LEDs: 0 dB
+    ]
+
+    /// Map Apollo audio dBFS to MCU 4-bit meter nibble (0x0..0xE) using selectable curve preset.
+    public static func dbToMcuMeter(db: Double, isClip: Bool = false, preset: MeterCurvePreset? = nil) -> UInt8 {
         if isClip || db >= 0.0 {
             return 0x0E
         }
-        if db <= -60.0 {
+        let active = preset ?? activeMeterPreset
+        let ticks: [(threshold: Double, seg: UInt8)]
+        let noiseFloor: Double
+
+        switch active {
+        case .consoleMatch:
+            ticks = consoleTicks
+            noiseFloor = -60.0
+        case .trackingSensitive:
+            ticks = trackingTicks
+            noiseFloor = -52.0
+        case .broadcastK14:
+            ticks = broadcastK14Ticks
+            noiseFloor = -46.0
+        }
+
+        if db <= noiseFloor {
             return 0x00
         }
-        for (threshold, seg) in meterTicks.reversed() {
+        for (threshold, seg) in ticks.reversed() {
             if db >= threshold {
                 return seg
             }

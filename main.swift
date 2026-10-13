@@ -24,6 +24,7 @@ struct BridgeConfig: Codable {
     var speechVolume: Float = 0.5
     var speechRate: Float = 0.52
     var sendLabels: [String] = ["AUX 1", "AUX 2", "HP 1", "HP 2", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
+    var geminiApiKey: String = ""
 
     enum CodingKeys: String, CodingKey {
         case port = "port"
@@ -32,6 +33,7 @@ struct BridgeConfig: Codable {
         case speechVolume = "speech_volume"
         case speechRate = "speech_rate"
         case sendLabels = "send_labels"
+        case geminiApiKey = "gemini_api_key"
     }
 }
 
@@ -69,6 +71,9 @@ final class ConfigManager {
             if let savedLabels = UserDefaults.standard.stringArray(forKey: "UAMCUSendLabels"), !savedLabels.isEmpty {
                 config.sendLabels = savedLabels
             }
+            if let savedKey = UserDefaults.standard.string(forKey: "UAMCUGeminiApiKey") {
+                config.geminiApiKey = savedKey
+            }
         }
         let defaultSendLabels = ["AUX 1", "AUX 2", "HP 1", "HP 2", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
         if config.sendLabels.count < 8 {
@@ -93,6 +98,7 @@ final class ConfigManager {
         UserDefaults.standard.set(config.speechVolume, forKey: "UAMCUSpeechVolume")
         UserDefaults.standard.set(config.speechRate, forKey: "UAMCUSpeechRate")
         UserDefaults.standard.set(config.sendLabels, forKey: "UAMCUSendLabels")
+        UserDefaults.standard.set(config.geminiApiKey, forKey: "UAMCUGeminiApiKey")
     }
 }
 
@@ -163,6 +169,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Load configuration
         config = ConfigManager.shared.load()
 
+        // Enable Standard Edit Menu for Cut/Copy/Paste/Select All (LSUIElement apps)
+        setupStandardEditMenu()
+
         // Configure Voice Announcer
         VoiceAnnouncer.shared.isEnabled = config.speechFeedback
         VoiceAnnouncer.shared.volume = config.speechVolume
@@ -184,6 +193,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         cleanupHardware()
     }
 
+    private func setupStandardEditMenu() {
+        let mainMenu = NSMenu()
+        let editMenuItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(NSMenuItem.separator())
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+        NSApp.mainMenu = mainMenu
+    }
+
     // MARK: - Bridge Setup
 
     private func setupBridgeSystems() {
@@ -201,6 +226,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }, voice: VoiceAnnouncer.shared)
         mcuEngine.wheelMode = config.wheelMode
         mcuEngine.sendLabels = config.sendLabels
+        mcuEngine.onOpenAIChatWindow = { [weak self] in
+            guard let self = self else { return }
+            AIChatWindowController.show(uad: self.uadClient, auditor: self.mcuEngine.auditor)
+        }
+        AIChatEngine.shared.geminiApiKey = config.geminiApiKey
 
         // 4. Connect MIDI Port
         connectMIDIPort(config.port)
@@ -294,6 +324,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         buildMenu()
         statusItem.menu = menu
+
+        AIChatWindowController.statusItemFrameProvider = { [weak self] in
+            guard let button = self?.statusItem?.button, let win = button.window else { return nil }
+            let rectInWindow = button.convert(button.bounds, to: nil)
+            return win.convertToScreen(rectInWindow)
+        }
 
         NotificationCenter.default.addObserver(self, selector: #selector(handleReportsChangedNotification), name: Notification.Name("AIReportsDidChange"), object: nil)
     }
@@ -476,6 +512,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let triggerAiItem = NSMenuItem(title: "Trigger AI Co-Producer Session (FINE Key)...", action: #selector(handleTriggerAiSession(_:)), keyEquivalent: "")
         triggerAiItem.target = self
         aiReportMenu.addItem(triggerAiItem)
+
+        let openChatWindowItem = NSMenuItem(title: "S&D Co-Producer Chat Window (Hold FINE)...", action: #selector(handleOpenAIChatWindow(_:)), keyEquivalent: "a")
+        openChatWindowItem.keyEquivalentModifierMask = [.command, .shift]
+        openChatWindowItem.target = self
+        aiReportMenu.addItem(openChatWindowItem)
+
+        let configGeminiItem = NSMenuItem(title: "Configure Google Gemini API Key...", action: #selector(handleConfigureGeminiKey(_:)), keyEquivalent: "")
+        configGeminiItem.target = self
+        aiReportMenu.addItem(configGeminiItem)
         aiReportMenu.addItem(NSMenuItem.separator())
 
         let openReportsWindowItem = NSMenuItem(title: "Open AI Reports Window...", action: #selector(handleOpenAIReportsWindow(_:)), keyEquivalent: "")
@@ -761,6 +806,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func handleTriggerAiSession(_ sender: NSMenuItem) {
         mcuEngine.auditor.handleFineButton()
+    }
+
+    @objc private func handleOpenAIChatWindow(_ sender: Any?) {
+        AIChatWindowController.show(uad: uadClient, auditor: mcuEngine.auditor)
+    }
+
+    @objc private func handleConfigureGeminiKey(_ sender: Any?) {
+        ApiKeyDialogHelper.present(
+            title: "Configure Google Gemini API Key",
+            currentKey: config.geminiApiKey,
+            window: nil
+        ) { [weak self] newKey in
+            guard let self = self else { return }
+            self.config.geminiApiKey = newKey
+            AIChatEngine.shared.geminiApiKey = newKey
+            ConfigManager.shared.save(self.config)
+            VoiceAnnouncer.shared.speak(newKey.isEmpty ? "Gemini key removed" : "Gemini API key saved")
+        }
     }
 
     @objc private func handleOpenAIReportsWindow(_ sender: NSMenuItem) {

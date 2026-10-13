@@ -18,6 +18,7 @@ public final class UADCurveTests {
         testChannelName7CharFormatting()
         testDbAndMeterStringFormatting()
         testSpeechLexiconFormatting()
+        testMeterCurvePresetsAndSensitivity()
     }
 
     /// Test monitor taper to dB and vice versa
@@ -99,6 +100,31 @@ public final class UADCurveTests {
             assertEqual(UADCurve.formatPanSpeech(0.0), "center")
             assertEqual(UADCurve.formatPanSpeech(-1.0), "left 100 percent")
             assertEqual(UADCurve.formatPanSpeech(1.0), "right 100 percent")
+        }
+    }
+
+    /// Test selectable meter sensitivity curves and presets (Tracking vs Console Match vs K-14)
+    public static func testMeterCurvePresetsAndSensitivity() {
+        runTest("MCU Meter Curve Presets & High-Sensitivity Dynamic Range") {
+            // 1. Console Match preset (1:1 Apollo Console tick marks)
+            assertEqual(UADCurve.dbToMcuMeter(db: -70.0, preset: .consoleMatch), 0x00, "Noise floor must be 0")
+            assertEqual(UADCurve.dbToMcuMeter(db: -54.0, preset: .consoleMatch), 0x01, "-54 dB lights 1 LED")
+            assertEqual(UADCurve.dbToMcuMeter(db: -35.0, preset: .consoleMatch), 0x03, "-35 dB lights 3 LEDs in Console Match")
+            assertEqual(UADCurve.dbToMcuMeter(db: -21.0, preset: .consoleMatch), 0x06, "-21 dB lights 6 LEDs in Console Match")
+            assertEqual(UADCurve.dbToMcuMeter(db: 0.0, preset: .consoleMatch), 0x0E, "0 dB must trigger CLIP")
+            assertEqual(UADCurve.dbToMcuMeter(db: -10.0, isClip: true, preset: .consoleMatch), 0x0E, "Clip flag must trigger CLIP")
+
+            // 2. Tracking / Sensitive preset (Expanded resolution for tracking mics)
+            assertEqual(UADCurve.dbToMcuMeter(db: -60.0, preset: .trackingSensitive), 0x00, "Noise floor at -52 dB")
+            assertEqual(UADCurve.dbToMcuMeter(db: -48.0, preset: .trackingSensitive), 0x01, "-48 dB lights 1 LED")
+            assertEqual(UADCurve.dbToMcuMeter(db: -23.0, preset: .trackingSensitive), 0x06, "-23 dB lights 6 LEDs (halfway up ladder)")
+            assertEqual(UADCurve.dbToMcuMeter(db: -15.0, preset: .trackingSensitive), 0x08, "-15 dB lights 8 LEDs")
+            assertTrue(UADCurve.dbToMcuMeter(db: -23.0, preset: .trackingSensitive) >= UADCurve.dbToMcuMeter(db: -23.0, preset: .consoleMatch),
+                       "Tracking preset must be equal or more sensitive than Console Match")
+
+            // 3. Broadcast / K-14 preset
+            assertEqual(UADCurve.dbToMcuMeter(db: -14.0, preset: .broadcastK14), 0x08, "-14 dBFS lights 8 LEDs (K-14 0 VU target)")
+            assertEqual(UADCurve.dbToMcuMeter(db: -0.2, preset: .broadcastK14), 0x0C, "-0.2 dBFS lights 12 LEDs")
         }
     }
 }

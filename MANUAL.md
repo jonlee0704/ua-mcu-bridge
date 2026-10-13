@@ -469,8 +469,8 @@ The native status item (`slider.vertical.3`) in your top menu bar provides compl
 | **SENDS Button** | 41 | `0x29` | Bidirectional | Toggles CUE/Sends Focus Mode + amber LED |
 | **PLUG-IN Button** | 43 | `0x2B` | Bidirectional | Toggles Plug-in Parameter Inspector + amber LED |
 | **FLIP Button** | 50 | `0x32` | Bidirectional | Single: Return to Main Mix; Double: Snap to Ch 1–8 |
-| **Page Navigation** | 48/49, 44/45, 104/105 | Various | Inbound | Jumps active bank in 8-channel pages |
-| **Bank Navigation** | 98/99 | `0x62`/`0x63` | Inbound | Nudges bank by 1 single track step |
+| **Page / Bank Paging** | 46/47, 48/49, 44/45 | Various | Inbound | Jumps active bank in 8-channel pages (or steps channels in sub-modes) |
+| **Bank Nudge** | 98/99 | `0x62`/`0x63` | Inbound | Nudges bank by 1 single track step |
 | **FINE Button (AI)** | 70 | `0x46` | Bidirectional | **Launches AI Studio Co-Producer** + tally LED (Note 83 absorbed as wheel strobe) |
 | **UP Arrow** | 96 | `0x60` | Inbound | **AI YES / Apply Fix** (or Re-test when complete) |
 | **DOWN Arrow** | 97 | `0x61` | Inbound | **AI NO / Skip Suggestion** |
@@ -482,7 +482,7 @@ The native status item (`slider.vertical.3`) in your top menu bar provides compl
 ### 7.2 Pitch Bend, CC, and Pressure Specifications
 * **Fader Position (`0xE0`–`0xE7`):** 14-bit pitch bend ($0$ to $16,383$) mapped to `FaderLevelTapered`.
 * **Rotary Pan (`CC 16–23`):** Relative 2's complement encoders adjusting stereo balance.
-* **Jog Wheel (`CC 60` or Notes 46/47):** Trims Master Monitor Volume $\pm 1.0\text{ dB}$ per tick.
+* **Jog Wheel (`CC 60`):** Trims Master Monitor Volume $\pm 1.0\text{ dB}$ per tick.
 * **16-Segment Metering (`0xD0`):** Channel Pressure nibbles polling at 25 FPS from $-60\text{ dBFS}$ to `CLIP`.
 
 ---

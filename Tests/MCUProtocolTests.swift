@@ -14,6 +14,7 @@ public final class MCUProtocolTests {
 
         testPageNavigationAcrossChannels()
         testWheelControlsOnlyMonitorVolume()
+        testBankKeysPageAndShiftBanks()
         testWheelStrobeNote83Absorbed()
         testStreamingMidiParserMultiMessagePacket()
         testBankOneTrackNavigation()
@@ -21,6 +22,7 @@ public final class MCUProtocolTests {
         testFlipButtonReturnAndHome()
         testFaderTouchSensorsAbsorbed()
         testCueSendsModeLevelMeters()
+        testMeterBallisticsAndClockInjection()
     }
 
     /// P0 TEST: Hardware PAGE Buttons (< PAGE = Note 48, PAGE > = Note 49)
@@ -74,39 +76,28 @@ public final class MCUProtocolTests {
         }
     }
 
-    /// P0 TEST: Rotary Wheel Controls ONLY Apollo Monitor Volume
-    /// Notes 46/47 and CC 60 adjust master monitor volume and NEVER move channel faders or banks.
+    /// P0 TEST: Jog Wheel (CC 60) Controls Exclusively Apollo Monitor Volume
+    /// CC 60 adjusts master monitor volume and NEVER moves channel faders or banks.
     public static func testWheelControlsOnlyMonitorVolume() {
-        runTest("P0: Rotary Wheel (Notes 46/47 & CC 60) controls exclusively monitor volume") {
+        runTest("P0: Jog Wheel (CC 60) controls exclusively monitor volume") {
             let (mcu, uad, mockMidi) = TestAudioFixture.makeMCUEngine(channelCount: 32)
             uad.monitorLevelDb = -40.0
 
             let initialBank = mcu.bankOffset
             mockMidi.clear()
 
-            // 1. Turn Wheel Right (Note 47) -> Monitor volume +1.0 dB (-40 -> -39 dB)
-            mcu.handleMidiBytes([0x90, 47, 0x7F])
-            mcu.handleMidiBytes([0x90, 47, 0x00])
-            assertWithinTolerance(uad.monitorLevelDb, -39.0, tolerance: 0.05, "Note 47 must increase monitor volume by 1.0 dB")
-            assertEqual(mcu.bankOffset, initialBank, "Note 47 must NEVER move channel bank")
-
-            // 2. Turn Wheel Left (Note 46) -> Monitor volume -1.0 dB (-39 -> -40 dB)
-            mcu.handleMidiBytes([0x90, 46, 0x7F])
-            mcu.handleMidiBytes([0x90, 46, 0x00])
-            assertWithinTolerance(uad.monitorLevelDb, -40.0, tolerance: 0.05, "Note 46 must decrease monitor volume by 1.0 dB")
-            assertEqual(mcu.bankOffset, initialBank, "Note 46 must NEVER move channel bank")
-
-            // 3. Jog Wheel (CC 60): Relative two's complement
+            // 1. Jog Wheel (CC 60): Relative two's complement
             // Value 1 = +1 tick (+1.0 dB -> -39.0 dB)
             mcu.handleMidiBytes([0xB0, 60, 0x01])
             assertWithinTolerance(uad.monitorLevelDb, -39.0, tolerance: 0.05, "CC 60 (val=1) must increase monitor volume by 1.0 dB")
+            assertEqual(mcu.bankOffset, initialBank, "CC 60 must NEVER move channel bank")
 
             // Value 0x42 = -2 ticks (-2.0 dB -> -41.0 dB)
             mcu.handleMidiBytes([0xB0, 60, 0x42])
             assertWithinTolerance(uad.monitorLevelDb, -41.0, tolerance: 0.05, "CC 60 (val=0x42) must decrease monitor volume by 2.0 dB")
             assertEqual(mcu.bankOffset, initialBank, "CC 60 must NEVER move channel bank")
 
-            // 4. Click Rotary Wheel (Note 100 / Note 84) -> Toggle Monitor Mute
+            // 2. Click Rotary Wheel (Note 100 / Note 84) -> Toggle Monitor Mute
             assertFalse(uad.monitorMute, "Initial monitor mute must be false")
             mcu.handleMidiBytes([0x90, 100, 0x7F])
             mcu.handleMidiBytes([0x90, 100, 0x00])
@@ -115,6 +106,99 @@ public final class MCUProtocolTests {
             mcu.handleMidiBytes([0x90, 84, 0x7F])
             mcu.handleMidiBytes([0x90, 84, 0x00])
             assertFalse(uad.monitorMute, "Note 84 click must unmute monitor")
+        }
+    }
+
+    /// P0 TEST: Hardware Bank Keys (Notes 46/47) Page & Shift Banks Across All Modes
+    /// Notes 46 (< BANK) and 47 (BANK >) must page banks and NEVER modify monitor volume.
+    public static func testBankKeysPageAndShiftBanks() {
+        runTest("P0: Bank keys (Notes 46/47) page banks and NEVER modify monitor volume") {
+            let (mcu, uad, _) = TestAudioFixture.makeMCUEngine(channelCount: 32)
+            uad.monitorLevelDb = -24.0
+            let initialMonitorDb = uad.monitorLevelDb
+            assertEqual(mcu.bankOffset, 0, "Initial bankOffset must be 0")
+
+            // 1. BANK > (Note 47): Advance bank by 8 tracks across channels
+            mcu.handleMidiBytes([0x90, 47, 0x7F])
+            mcu.handleMidiBytes([0x90, 47, 0x00])
+            assertEqual(mcu.bankOffset, 8, "Note 47 must advance bankOffset to 8")
+            assertEqual(uad.monitorLevelDb, initialMonitorDb, "Note 47 must NEVER change monitor volume")
+
+            mcu.handleMidiBytes([0x90, 47, 0x7F])
+            mcu.handleMidiBytes([0x90, 47, 0x00])
+            assertEqual(mcu.bankOffset, 16, "Note 47 must advance bankOffset to 16")
+            assertEqual(uad.monitorLevelDb, initialMonitorDb, "Note 47 must NEVER change monitor volume")
+
+            mcu.handleMidiBytes([0x90, 47, 0x7F])
+            mcu.handleMidiBytes([0x90, 47, 0x00])
+            assertEqual(mcu.bankOffset, 24, "Note 47 must advance bankOffset to 24")
+            assertEqual(uad.monitorLevelDb, initialMonitorDb, "Note 47 must NEVER change monitor volume")
+
+            // Clamping past end
+            mcu.handleMidiBytes([0x90, 47, 0x7F])
+            mcu.handleMidiBytes([0x90, 47, 0x00])
+            assertEqual(mcu.bankOffset, 24, "Note 47 past end must remain clamped at 24")
+            assertEqual(uad.monitorLevelDb, initialMonitorDb, "Note 47 must NEVER change monitor volume")
+
+            // 2. < BANK (Note 46): Page backward
+            mcu.handleMidiBytes([0x90, 46, 0x7F])
+            mcu.handleMidiBytes([0x90, 46, 0x00])
+            assertEqual(mcu.bankOffset, 16, "Note 46 must decrement bankOffset to 16")
+            assertEqual(uad.monitorLevelDb, initialMonitorDb, "Note 46 must NEVER change monitor volume")
+
+            mcu.handleMidiBytes([0x90, 46, 0x7F])
+            mcu.handleMidiBytes([0x90, 46, 0x00])
+            assertEqual(mcu.bankOffset, 8, "Note 46 must decrement bankOffset to 8")
+            assertEqual(uad.monitorLevelDb, initialMonitorDb, "Note 46 must NEVER change monitor volume")
+
+            mcu.handleMidiBytes([0x90, 46, 0x7F])
+            mcu.handleMidiBytes([0x90, 46, 0x00])
+            assertEqual(mcu.bankOffset, 0, "Note 46 must decrement bankOffset to 0")
+            assertEqual(uad.monitorLevelDb, initialMonitorDb, "Note 46 must NEVER change monitor volume")
+
+            // Clamping at start
+            mcu.handleMidiBytes([0x90, 46, 0x7F])
+            mcu.handleMidiBytes([0x90, 46, 0x00])
+            assertEqual(mcu.bankOffset, 0, "Note 46 at 0 must remain clamped at 0")
+            assertEqual(uad.monitorLevelDb, initialMonitorDb, "Note 46 must NEVER change monitor volume")
+
+            // 3. Sends Focus Mode: Notes 46/47 step focused sends channel
+            mcu.handleMidiBytes([0x90, 41, 0x7F]) // SENDS Mode On
+            mcu.handleMidiBytes([0x90, 41, 0x00])
+            assertTrue(mcu.sendsFocusMode, "Must be in Sends Focus Mode")
+            let initialSendsCh = mcu.sendsFocusChannel
+            mcu.handleMidiBytes([0x90, 47, 0x7F]) // Note 47 -> step next channel
+            mcu.handleMidiBytes([0x90, 47, 0x00])
+            assertEqual(mcu.sendsFocusChannel, initialSendsCh + 1, "Note 47 in Sends mode must step sends channel")
+            assertEqual(uad.monitorLevelDb, initialMonitorDb, "Note 47 in Sends mode must NEVER change monitor volume")
+
+            mcu.handleMidiBytes([0x90, 46, 0x7F]) // Note 46 -> step previous channel
+            mcu.handleMidiBytes([0x90, 46, 0x00])
+            assertEqual(mcu.sendsFocusChannel, initialSendsCh, "Note 46 in Sends mode must step back sends channel")
+            assertEqual(uad.monitorLevelDb, initialMonitorDb, "Note 46 in Sends mode must NEVER change monitor volume")
+
+            mcu.handleMidiBytes([0x90, 41, 0x7F]) // SENDS Mode Off
+            mcu.handleMidiBytes([0x90, 41, 0x00])
+            assertFalse(mcu.sendsFocusMode, "Must exit Sends Focus Mode")
+
+            // 4. Preamp Focus Mode: Notes 46/47 step focused preamp channel
+            mcu.handleMidiBytes([0x90, 40, 0x7F]) // CHANNEL / Preamp Mode On
+            mcu.handleMidiBytes([0x90, 40, 0x00])
+            assertTrue(mcu.preampFocusMode, "Must be in Preamp Focus Mode")
+            let initialPreampCh = mcu.preampFocusChannel
+            mcu.handleMidiBytes([0x90, 47, 0x7F]) // Note 47 -> step next preamp channel
+            mcu.handleMidiBytes([0x90, 47, 0x00])
+            assertEqual(mcu.preampFocusChannel, initialPreampCh + 1, "Note 47 in Preamp mode must step channel")
+            assertEqual(uad.monitorLevelDb, initialMonitorDb, "Note 47 in Preamp mode must NEVER change monitor volume")
+
+            mcu.handleMidiBytes([0x90, 46, 0x7F]) // Note 46 -> step previous preamp channel
+            mcu.handleMidiBytes([0x90, 46, 0x00])
+            assertEqual(mcu.preampFocusChannel, initialPreampCh, "Note 46 in Preamp mode must step back channel")
+            assertEqual(uad.monitorLevelDb, initialMonitorDb, "Note 46 in Preamp mode must NEVER change monitor volume")
+
+            mcu.handleMidiBytes([0x90, 40, 0x7F]) // CHANNEL / Preamp Mode Off
+            mcu.handleMidiBytes([0x90, 40, 0x00])
+            assertFalse(mcu.preampFocusMode, "Must exit Preamp Focus Mode")
         }
     }
 
@@ -150,21 +234,24 @@ public final class MCUProtocolTests {
 
             // Construct packet containing:
             // 1. Note 83 down (Wheel strobe)
-            // 2. Note 47 down (Rotate CW)
+            // 2. Note 47 down (Bank >)
             // 3. Note 47 up
-            // 4. Note 83 up (Wheel strobe release)
+            // 4. CC 60 val 1 (Jog wheel CW +1.0 dB)
+            // 5. Note 83 up (Wheel strobe release)
             let batchedBytes: [UInt8] = [
                 0x90, 83, 0x7F,
                 0x90, 47, 0x7F,
                 0x90, 47, 0x00,
+                0xB0, 60, 0x01,
                 0x90, 83, 0x00
             ]
 
             mcu.handleMidiBytes(batchedBytes)
 
-            // Both Note 83 must be absorbed AND Note 47 must have incremented monitor volume
+            // Both Note 83 must be absorbed, Note 47 must advance bank, and CC 60 must adjust monitor volume
             assertEqual(mcu.auditor.state, .idle, "Note 83 in batched packet must be absorbed")
-            assertWithinTolerance(uad.monitorLevelDb, -44.0, tolerance: 0.05, "Note 47 inside batched packet must be executed (+1.0 dB)")
+            assertEqual(mcu.bankOffset, 8, "Note 47 inside batched packet must advance bankOffset to 8")
+            assertWithinTolerance(uad.monitorLevelDb, -44.0, tolerance: 0.05, "CC 60 inside batched packet must be executed (+1.0 dB)")
         }
     }
 
@@ -397,6 +484,48 @@ public final class MCUProtocolTests {
             mcu.handleMidiBytes([0x90, 41, 0x00])
             assertFalse(mcu.sendsFocusMode, "Must exit CUE/SENDS mode")
             assertEqual(uad.activeSendsChannel, nil, "activeSendsChannel must be cleared on exit")
+        }
+    }
+
+    private class MockMeterClock: MeterClockProtocol {
+        var currentTime: Double = 1000.0
+        func now() -> Double { return currentTime }
+    }
+
+    /// P0 TEST: Injected Meter Clock, Instant Attack, and Smooth Analog Release Ballistics
+    public static func testMeterBallisticsAndClockInjection() {
+        runTest("P0: Injected Meter Clock, instant attack, and smooth analog decay ballistics") {
+            let (mcu, _, mockMidi) = TestAudioFixture.makeMCUEngine(channelCount: 8)
+            let mockClock = MockMeterClock()
+            mcu.meterClock = mockClock
+            mcu.meterDecayRate = 72.0 // 72 dB/s
+            mockMidi.clear()
+
+            // 1. Instant Attack: send -6.0 dBFS on Slot 0
+            mcu.sendMeterLevel(slot: 0, db: -6.0, isClip: false)
+            let mAttack = mockMidi.lastMeterLevel(slot: 0)
+            assertNotNil(mAttack, "Instant attack must transmit meter packet immediately")
+            assertTrue(mAttack != nil && mAttack! >= 0x0A, "Slot 0 at -6 dB must register 10+ LEDs immediately")
+
+            // 2. Smooth decay over 0.5s (should fall 36 dB from -6 dB -> -42 dB)
+            mockClock.currentTime += 0.5
+            // Advance ballistics with audio silent (-144 dB)
+            mcu.sendMeterLevel(slot: 0, db: -144.0, isClip: false)
+            let mDecayed = mockMidi.lastMeterLevel(slot: 0)
+            assertNotNil(mDecayed, "Decayed meter must transmit updated packet")
+            assertTrue(mDecayed != nil && mDecayed! < mAttack!, "Meter must decay smoothly downwards over time")
+            assertTrue(mDecayed != nil && mDecayed! >= 0x02, "After 0.5s decay from -6 dB at 72 dB/s (-42 dB target), meter should show ~2-3 LEDs")
+
+            // 3. Fall to silence: advance time by 4.0s
+            mockClock.currentTime += 4.0
+            mcu.sendMeterLevel(slot: 0, db: -144.0, isClip: false)
+            let mSilent = mockMidi.lastMeterLevel(slot: 0)
+            assertEqual(mSilent, 0x00, "After full decay, meter must reach silence (0 LEDs)")
+
+            // 4. Repeated ticks in silence must not flood MIDI
+            mockMidi.clear()
+            mcu.tickAllMeters()
+            assertEqual(mockMidi.sentPackets.count, 0, "Silent idle meter must not transmit duplicate 0 packets")
         }
     }
 }

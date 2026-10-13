@@ -20,6 +20,7 @@ swiftc -O -target arm64-apple-macos12.0 \
   UADClient.swift \
   AIReportManager.swift \
   AIAudioAuditor.swift \
+  AIChatEngine.swift \
   MCUEngine.swift \
   Tests/TestFramework.swift \
   Tests/TestMocks.swift \
@@ -27,6 +28,7 @@ swiftc -O -target arm64-apple-macos12.0 \
   Tests/UADClientTests.swift \
   Tests/UADCurveTests.swift \
   Tests/AIAudioAuditorTests.swift \
+  Tests/AIChatEngineTests.swift \
   Tests/TestRunner.swift \
   -o "$BINARY"
 

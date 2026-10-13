@@ -11,6 +11,17 @@
 
 import Foundation
 
+// MARK: - Meter Clock Protocol for Deterministic Timing & Testing
+
+public protocol MeterClockProtocol: AnyObject {
+    func now() -> Double
+}
+
+public class SystemMeterClock: MeterClockProtocol {
+    public init() {}
+    public func now() -> Double { CFAbsoluteTimeGetCurrent() }
+}
+
 /// Complete MCU Protocol Engine for SSL UF8 and UAD Apollo Console bi-directional tactile integration.
 public final class MCUEngine {
     public let uad: UADClient
@@ -66,6 +77,12 @@ public final class MCUEngine {
 
     // AI Studio Co-Producer
     public var auditor: AIAudioAuditor!
+    public var onOpenAIChatWindow: (() -> Void)?
+    public var fineLongPressThreshold: TimeInterval = 0.60
+    private var fineDownTime: TimeInterval = 0.0
+    private var fineLongPressTimer: DispatchWorkItem?
+    public private(set) var fineLongPressTriggered: Bool = false
+    private var wheelTurnedDuringFineNote: Bool = false
 
     public init(uadClient: UADClient, sendMIDIFn: @escaping ([UInt8]) -> Void, voice: VoiceAnnouncer = .shared) {
         self.uad = uadClient
@@ -181,40 +198,90 @@ public final class MCUEngine {
         sendMIDI([0x90, 50, isOn ? 0x7F : 0x00])
     }
 
-    /// Enable Mackie Control level meters (LCD & hardware LED ladders) across both Logic Control and MCU IDs.
-    public func enableMeters() {
-        for modelId: UInt8 in [0x10, 0x14] {
-            // Global LCD meter mode
-            sendMIDI([0xF0, 0x00, 0x00, 0x66, modelId, 0x21, 0x01, 0xF7])
-            // Channel meter mode for slots 0..7: 0x03 = Peak + Overload
-            for slot: UInt8 in 0..<8 {
-                sendMIDI([0xF0, 0x00, 0x00, 0x66, modelId, 0x20, slot, 0x03, 0xF7])
-            }
-        }
-    }
+    /// Injectable meter clock for microsecond timing and deterministic automated unit testing
+    public var meterClock: MeterClockProtocol = SystemMeterClock()
+    public var meterDecayRate: Double = 72.0 // 72 dB / second (dynamic, snappy bounce matching UAD Console)
+    public var meterAttackInstant: Bool = true
 
     private var lastMeterVal: [Int: UInt8] = [:]
     private var lastMeterSendTime: [Int: Double] = [:]
     private var ballisticMeterDb: [Int: Double] = [:]
     private var lastBallisticUpdateTime: [Int: Double] = [:]
+    private var targetMeterDb: [Int: Double] = [:]
+    private var targetMeterClip: [Int: Bool] = [:]
+    private var meterTimer: DispatchSourceTimer?
 
-    /// Send real-time MCU Channel Pressure meter message (0xD0) with analog PPM ballistics and keep-alive.
+    /// Enable Mackie Control level meters (LCD & hardware LED ladders) across both Logic Control and MCU IDs.
+    public func enableMeters() {
+        for modelId: UInt8 in [0x10, 0x14] {
+            // Global LCD meter mode
+            sendMIDI([0xF0, 0x00, 0x00, 0x66, modelId, 0x21, 0x01, 0xF7])
+            // Channel meter mode for slots 0..7: 0x01 = Dynamic real-time ladder (Peak hold OFF to eliminate static freezing)
+            for slot: UInt8 in 0..<8 {
+                sendMIDI([0xF0, 0x00, 0x00, 0x66, modelId, 0x20, slot, 0x01, 0xF7])
+            }
+        }
+        startMeterTimer()
+    }
+
+    /// Real-time 60 Hz output timer to drive smooth decay independent of Apollo socket packet jitter
+    public func startMeterTimer() {
+        meterTimer?.cancel()
+        let timer = DispatchSource.makeTimerSource()
+        timer.schedule(deadline: .now() + 0.016, repeating: .milliseconds(16))
+        timer.setEventHandler { [weak self] in
+            self?.tickAllMeters()
+        }
+        meterTimer = timer
+        timer.resume()
+    }
+
+    public func stopMeterTimer() {
+        meterTimer?.cancel()
+        meterTimer = nil
+    }
+
+    /// Background 60 Hz ballistics tick: decays active meters continuously
+    public func tickAllMeters() {
+        lock.lock()
+        defer { lock.unlock() }
+        for slot in 0..<numSlots {
+            let target = targetMeterDb[slot] ?? -144.0
+            let clip = targetMeterClip[slot] ?? false
+            let current = ballisticMeterDb[slot] ?? -144.0
+            if target > -65.0 || current > -65.0 || (lastMeterVal[slot] ?? 0) != 0 {
+                _updateSlotMeterLocked(slot: slot, targetDb: target, isClip: clip)
+            }
+        }
+    }
+
+    /// Send real-time MCU Channel Pressure meter message (0xD0) with instant attack, 36 dB/s decay and keep-alive.
     public func sendMeterLevel(slot: Int, db: Double, isClip: Bool = false) {
         guard slot >= 0, slot < numSlots else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        _updateSlotMeterLocked(slot: slot, targetDb: db, isClip: isClip)
+    }
 
-        let now = CFAbsoluteTimeGetCurrent()
+    @discardableResult
+    private func _updateSlotMeterLocked(slot: Int, targetDb: Double, isClip: Bool) -> UInt8 {
+        targetMeterDb[slot] = targetDb
+        targetMeterClip[slot] = isClip
+
+        let now = meterClock.now()
         let lastTime = lastBallisticUpdateTime[slot] ?? now
-        let dt = min(0.1, max(0.001, now - lastTime))
+        let dt = min(5.0, max(0.001, now - lastTime))
         lastBallisticUpdateTime[slot] = now
 
-        var current = ballisticMeterDb[slot] ?? -77.0
-        if db >= current {
-            // Instant attack: rise immediately to peak without delay
-            current = db
+        var current = ballisticMeterDb[slot] ?? -144.0
+        if targetDb >= current || meterAttackInstant {
+            if targetDb >= current {
+                current = targetDb // 0 ms instant attack
+            } else {
+                current = max(targetDb, current - (meterDecayRate * dt))
+            }
         } else {
-            // Fast analog decay: fall smoothly at ~48 dB / second to match live console dynamics
-            let decayRate = 48.0
-            current = max(db, current - (decayRate * dt))
+            current = max(targetDb, current - (meterDecayRate * dt))
         }
         ballisticMeterDb[slot] = current
 
@@ -231,6 +298,7 @@ public final class MCUEngine {
             // Channel Pressure: 0xD0, (slot << 4) | val
             sendMIDI([0xD0, UInt8((slot << 4) | Int(val))])
         }
+        return val
     }
 
     public func getSendInfo(slot: Int) -> (prefix: String, name: String) {
@@ -904,9 +972,13 @@ public final class MCUEngine {
             return
         }
 
-        // SSL UF8 Wheel Active / Touch Strobe: Note 83 (0x53)
-        // Must absorb so wheel rotation never falsely triggers AI Co-Producer!
-        if note == 83 {
+        // Dedicated FINE / SHIFT Button:
+        // SSL UF8 hardware sends Note 83 (0x53) for the physical FINE button.
+        // Mackie Control Universal standard sends Note 70 (0x46).
+        // Short Press (< 600ms, >= 50ms): 3-step cycle (Start Listening -> Stop -> Exit)
+        // Long Press (>= 600ms): Opens S&D Co-Producer Chat Window
+        if note == 83 || note == 70 {
+            handleFineNote(note: note, isDown: isDown)
             return
         }
 
@@ -916,31 +988,31 @@ public final class MCUEngine {
         wheelPressTimer?.cancel()
         wheelPressTimer = nil
 
-        // CHANNEL ROTARY WHEEL (Notes 46, 47)
-        // Master rotary wheel in BANK mode transmits Notes 46 / 47.
-        // Controls ONLY Apollo Master Monitor Volume!
+        // Hardware BANK buttons (Notes 46, 47: < BANK / BANK >)
+        // Pages/shifts banks across Apollo channels without altering monitor volume!
         if note == 46 || note == 47 {
-            wheelRotatedDuringPress = true
-            wheelPressMuteTriggered = true
+            wheelTurnedDuringFineNote = true
+            fineLongPressTimer?.cancel()
+            fineLongPressTimer = nil
             let dir = (note == 46) ? -1 : 1
-            _ = uad.nudgeMonitorDb(deltaDb: Double(dir) * 1.0)
-            let dispStr = !uad.monitorMute ? String(format: "MONITOR: %+.1f dB", uad.monitorLevelDb) : "MONITOR: MUTED"
-            showTempHUD(text: ">>> \(dispStr) <<<", duration: 1.2)
-            let spkStr = !uad.monitorMute ? "Monitor \(UADCurve.formatDbSpeech(uad.monitorLevelDb))" : "Muted"
-            voice.speakDebounced(spkStr, delay: 0.35)
-            bridgeLog("[MCU] Channel Wheel Rotation (Note \(note)) -> Monitor: \(String(format: "%.1f", uad.monitorLevelDb)) dB (Mute=\(uad.monitorMute))")
+            if sendsFocusMode {
+                stepSendsChannel(delta: dir)
+            } else if pluginFocusMode {
+                stepPluginChannel(delta: dir)
+            } else if preampFocusMode {
+                stepPreampChannel(delta: dir)
+            } else {
+                pageBank(direction: dir)
+            }
             return
         }
 
         // Channel Rotary Wheel Click / Monitor Mute Push (Notes 84, 100, 101, 79)
         if [84, 100, 101, 79].contains(note) {
+            wheelTurnedDuringFineNote = true
+            fineLongPressTimer?.cancel()
+            fineLongPressTimer = nil
             toggleMonitorMute()
-            return
-        }
-
-        // FINE / SHIFT Button (Note 70 / 0x46) -> AI Studio Co-Producer
-        if note == 70 {
-            auditor.handleFineButton()
             return
         }
 
@@ -1026,19 +1098,23 @@ public final class MCUEngine {
                 stepSendsChannel(delta: dir)
             } else if pluginFocusMode {
                 handlePluginPaging(note: note)
+            } else if preampFocusMode {
+                stepPreampChannel(delta: dir)
             } else {
-                stepBank(delta: dir * 8)
+                pageBank(direction: dir)
             }
             return
         }
 
-        // Hardware BANK buttons: Notes 98, 99
+        // Hardware BANK / Cursor buttons: Notes 98, 99 -> Nudge bank by 1 track
         if note == 98 || note == 99 {
             let dir = (note == 98) ? -1 : 1
             if sendsFocusMode {
                 stepSendsChannel(delta: dir)
             } else if pluginFocusMode {
                 stepPluginChannel(delta: dir)
+            } else if preampFocusMode {
+                stepPreampChannel(delta: dir)
             } else {
                 stepBank(delta: dir * 1)
             }
@@ -1305,6 +1381,49 @@ public final class MCUEngine {
         }
     }
 
+    // MARK: - FINE Button Short / Long Press Supervisor
+
+    public func triggerFineLongPress() {
+        fineLongPressTriggered = true
+        showTempHUD(text: ">>> S&D CO-PRODUCER CHAT <<<", duration: 1.5)
+        voice.speakDebounced("S and D Co-Producer chat opened", delay: 0.1)
+        onOpenAIChatWindow?()
+    }
+
+    private func handleFineNote(note: Int, isDown: Bool) {
+        if isDown {
+            wheelTurnedDuringFineNote = false
+            fineDownTime = Date().timeIntervalSince1970
+            fineLongPressTriggered = false
+            fineLongPressTimer?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                guard !self.wheelTurnedDuringFineNote else { return }
+                self.triggerFineLongPress()
+            }
+            fineLongPressTimer = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + fineLongPressThreshold, execute: workItem)
+        } else {
+            fineLongPressTimer?.cancel()
+            fineLongPressTimer = nil
+            if fineLongPressTriggered {
+                fineLongPressTriggered = false
+                return
+            }
+            if wheelTurnedDuringFineNote {
+                wheelTurnedDuringFineNote = false
+                return
+            }
+            let duration = Date().timeIntervalSince1970 - fineDownTime
+            // Note 83 pulses under 50ms are UF8 rotary wheel touch strobes; absorb them
+            if note == 83 && duration < 0.05 {
+                return
+            }
+            // Short press: normal 3-step cycle (Start Listening -> Stop -> Exit)
+            auditor.handleFineButton()
+        }
+    }
+
     private func handleFlipButton() {
         let now = Date().timeIntervalSince1970
         let isDouble = (now - lastFlipPressTime) < 0.45
@@ -1560,15 +1679,61 @@ public final class MCUEngine {
         }
     }
 
-    private func stepBank(delta: Int) {
+    public func stepPreampChannel(delta: Int) {
+        let chKeys = uad.channels.keys.sorted()
+        guard !chKeys.isEmpty else { return }
+        let currIdx = chKeys.firstIndex(of: preampFocusChannel) ?? 0
+        let newIdx = max(0, min(chKeys.count - 1, currIdx + delta))
+        if newIdx != currIdx {
+            togglePreampFocusMode(targetCh: chKeys[newIdx])
+        } else {
+            if delta > 0 {
+                voice.speakDebounced("Last channel", delay: 0.25)
+            } else {
+                voice.speakDebounced("First channel", delay: 0.25)
+            }
+        }
+    }
+
+    public func pageBank(direction: Int) {
+        let maxCh = max(0, uad.channels.count - 8)
+        let newOffset: Int
+        if direction > 0 {
+            newOffset = min(maxCh, ((bankOffset / 8) + 1) * 8)
+        } else {
+            newOffset = max(0, ((bankOffset - 1) / 8) * 8)
+        }
+        if newOffset != bankOffset {
+            bankOffset = newOffset
+            uad.activeBankChannels = Array(bankOffset..<min(uad.channels.count, bankOffset + 8))
+            refreshMainMixSurface()
+            let start = bankOffset + 1
+            let end = min(uad.channels.count, bankOffset + 8)
+            showTempHUD(text: ">>> BANK: TRACKS \(start)..\(end) <<<", duration: 1.2)
+            voice.speak("Tracks \(start) through \(end)")
+            bridgeLog("[MCU] Bank paged: offset=\(bankOffset) (Tracks \(start)..\(end))")
+        } else {
+            if direction > 0 {
+                voice.speakDebounced("Last page", delay: 0.25)
+            } else {
+                voice.speakDebounced("First page", delay: 0.25)
+            }
+            bridgeLog("[MCU] Bank boundary reached: offset=\(bankOffset)")
+        }
+    }
+
+    public func stepBank(delta: Int) {
         let maxCh = max(0, uad.channels.count - 8)
         let newOffset = max(0, min(maxCh, bankOffset + delta))
         if newOffset != bankOffset {
             bankOffset = newOffset
             uad.activeBankChannels = Array(bankOffset..<min(uad.channels.count, bankOffset + 8))
             refreshMainMixSurface()
-            voice.speak("Tracks \(bankOffset + 1) through \(min(uad.channels.count, bankOffset + 8))")
-            bridgeLog("[MCU] Paged bank: offset=\(bankOffset) (Tracks \(bankOffset + 1)..\(min(uad.channels.count, bankOffset + 8)))")
+            let start = bankOffset + 1
+            let end = min(uad.channels.count, bankOffset + 8)
+            showTempHUD(text: ">>> BANK: TRACKS \(start)..\(end) <<<", duration: 1.2)
+            voice.speak("Tracks \(start) through \(end)")
+            bridgeLog("[MCU] Paged bank: offset=\(bankOffset) (Tracks \(start)..\(end))")
         } else {
             if delta > 0 {
                 voice.speakDebounced("Last page", delay: 0.25)
@@ -1691,6 +1856,9 @@ public final class MCUEngine {
     }
 
     private func handleChannelWheelRotation(delta: Int) {
+        wheelTurnedDuringFineNote = true
+        fineLongPressTimer?.cancel()
+        fineLongPressTimer = nil
         // Channel Wheel (CC 60) controls ONLY Master Monitor Volume!
         _ = uad.nudgeMonitorDb(deltaDb: Double(delta) * 1.0)
         let dispStr = !uad.monitorMute ? String(format: "MONITOR: %+.1f dB", uad.monitorLevelDb) : "MONITOR: MUTED"
@@ -1702,6 +1870,10 @@ public final class MCUEngine {
 
     private func handleUADChange(eventType: String, chId: Int, value: Any?) {
         if eventType == "send_meter" || eventType == "send_meter_peak" {
+            if eventType == "send_meter_peak" {
+                // Absorb duplicate send peak event to prevent corrupted dt ballistics
+                return
+            }
             if sendsFocusMode && chId == sendsFocusChannel {
                 if let (sIdx, db, isClip) = value as? (Int, Double, Bool) {
                     if sIdx >= 0 && sIdx < 6 {
@@ -1717,6 +1889,11 @@ public final class MCUEngine {
             let isClip = chObj?.meterClip ?? false
             let peakVal = chObj?.meterPeak ?? (chObj?.meterLevel ?? -77.0)
             auditor?.recordTelemetry(chId: chId, peakDb: peakVal, isClip: isClip)
+
+            // If MeterLevel is active, let 'meter' drive the LED ladders to avoid duplicate frame processing
+            if eventType == "meter_peak" && (chObj?.meterLevel != nil && chObj!.meterLevel > -76.0) {
+                return
+            }
 
             // CRITICAL: Visual LED ladders track instantaneous MeterLevel (RMS/VU)
             // to bounce dynamically with audio rhythm, matching UAD Console exactly!

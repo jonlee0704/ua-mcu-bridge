@@ -101,6 +101,7 @@ public final class AIAudioAuditor {
 
         bridgeLog("[AI Auditor] Started AI listening across 32 channels. Waiting for user to press FINE to stop...")
         mcu?.sendMIDI([0x90, 70, 0x7F]) // Illuminate FINE key LED (Note 70)
+        mcu?.sendMIDI([0x90, 83, 0x7F]) // Illuminate FINE key LED (Note 83 for SSL UF8)
         mcu?.showTempHUD(text: ">>> GEMINI AI [ALPHA]: LISTENING (PRESS FINE TO STOP) <<<", duration: 6.0)
         voice.speak("AI Co-Producer listening across 32 channels. Play your mix, then press Fine to stop listening.")
     }
@@ -135,6 +136,7 @@ public final class AIAudioAuditor {
 
         bridgeLog("[AI Auditor] Exited AI Studio session.")
         mcu?.sendMIDI([0x90, 70, 0x00]) // Turn off FINE key LED (Note 70)
+        mcu?.sendMIDI([0x90, 83, 0x00]) // Turn off FINE key LED (Note 83 for SSL UF8)
         mcu?.showTempHUD(text: ">>> EXITED AI MODE [ALPHA] <<<", duration: 1.2)
         voice.speak("Exited AI Alpha session. Main mix.")
         mcu?.refreshMainMixSurface()
@@ -154,6 +156,59 @@ public final class AIAudioAuditor {
             recordedClips[chId] = true
         }
         lock.unlock()
+    }
+
+    // MARK: - Automated Mix Operations
+
+    @discardableResult
+    public func applyRoughMix() -> String {
+        let allChannels = uad.channels.values.sorted(by: { $0.id < $1.id })
+        for ch in allChannels {
+            let pk = self.recordedPeaks[ch.id] ?? ch.meterPeak
+            let lower = ch.name.lowercased()
+            if pk < -60.0 {
+                // Dead / Inactive track -> Pull fader to floor (-144 dB)
+                let tap = UADCurve.dbToTapered(-144.0)
+                self.uad.setFader(chId: ch.id, tapered: tap)
+                continue
+            }
+            // Musical role target peak levels (dBFS)
+            let targetAudiblePeak: Double
+            if lower.contains("vox") || lower.contains("vocal") || lower.contains("lead") || lower.contains("mic") {
+                targetAudiblePeak = -12.0 // Lead Vocal right in front
+            } else if lower.contains("kd") || lower.contains("kick") || lower.contains("bd") {
+                targetAudiblePeak = -14.0 // Kick anchor
+            } else if lower.contains("sd") || lower.contains("snare") {
+                targetAudiblePeak = -15.0 // Snare backbeat
+            } else if lower.contains("bass") || lower.contains("ampeg") {
+                targetAudiblePeak = -16.0 // Bass foundation
+            } else if lower.contains("t1") || lower.contains("t2") || lower.contains("t3") || lower.contains("tom") {
+                targetAudiblePeak = -18.0 // Toms
+            } else if lower.contains("oh") || lower.contains("cymbal") || lower.contains("hat") {
+                targetAudiblePeak = -20.0 // Cymbals air
+            } else if lower.contains("qc") || lower.contains("guitar") || lower.contains("gtr") || lower.contains("juno") || lower.contains("keys") {
+                targetAudiblePeak = -17.0 // Guitars / Synths
+            } else if ch.chType == "aux" {
+                targetAudiblePeak = -18.0 // FX returns
+            } else {
+                targetAudiblePeak = -16.0
+            }
+            let deltaDb = targetAudiblePeak - pk
+            let newFaderDb = max(-144.0, min(6.0, ch.faderDb + deltaDb))
+            let tap = UADCurve.dbToTapered(newFaderDb)
+            self.uad.setFader(chId: ch.id, tapered: tap)
+        }
+        // Immediately refresh physical motorized faders on active UF8 bank
+        if let m = self.mcu {
+            for slot in 0..<8 {
+                let chId = m.bankOffset + slot
+                if let ch = self.uad.channels[chId] {
+                    m.sendFaderPosition(slot: slot, normVal: ch.fader)
+                }
+            }
+            m.showTempHUD(text: ">>> AUTO-ROUGH MIX APPLIED <<<", duration: 1.5)
+        }
+        return "Balanced all active motorized faders into a clean rough mix (Vocals @ -12 dBFS, Kick @ -14 dBFS, Snare @ -15 dBFS, Bass @ -16 dBFS, Inactive tracks muted)."
     }
 
     // MARK: - Analysis & Rule Engine
@@ -191,51 +246,7 @@ public final class AIAudioAuditor {
                 lcdBanner: "[AUTO-ROUGH MIX] BALANCE ALL FADERS? ▲YES ▼NO",
                 applyAction: { [weak self] in
                     guard let self = self else { return "" }
-                    for ch in allChannels {
-                        let pk = self.recordedPeaks[ch.id] ?? ch.meterPeak
-                        let lower = ch.name.lowercased()
-                        if pk < -60.0 {
-                            // Dead / Inactive track -> Pull fader to floor (-144 dB)
-                            let tap = UADCurve.dbToTapered(-144.0)
-                            self.uad.setFader(chId: ch.id, tapered: tap)
-                            continue
-                        }
-                        // Musical role target peak levels (dBFS)
-                        let targetAudiblePeak: Double
-                        if lower.contains("vox") || lower.contains("vocal") || lower.contains("lead") || lower.contains("mic") {
-                            targetAudiblePeak = -12.0 // Lead Vocal right in front
-                        } else if lower.contains("kd") || lower.contains("kick") || lower.contains("bd") {
-                            targetAudiblePeak = -14.0 // Kick anchor
-                        } else if lower.contains("sd") || lower.contains("snare") {
-                            targetAudiblePeak = -15.0 // Snare backbeat
-                        } else if lower.contains("bass") || lower.contains("ampeg") {
-                            targetAudiblePeak = -16.0 // Bass foundation
-                        } else if lower.contains("t1") || lower.contains("t2") || lower.contains("t3") || lower.contains("tom") {
-                            targetAudiblePeak = -18.0 // Toms
-                        } else if lower.contains("oh") || lower.contains("cymbal") || lower.contains("hat") {
-                            targetAudiblePeak = -20.0 // Cymbals air
-                        } else if lower.contains("qc") || lower.contains("guitar") || lower.contains("gtr") || lower.contains("juno") || lower.contains("keys") {
-                            targetAudiblePeak = -17.0 // Guitars / Synths
-                        } else if ch.chType == "aux" {
-                            targetAudiblePeak = -18.0 // FX returns
-                        } else {
-                            targetAudiblePeak = -16.0
-                        }
-                        let deltaDb = targetAudiblePeak - pk
-                        let newFaderDb = max(-144.0, min(6.0, ch.faderDb + deltaDb))
-                        let tap = UADCurve.dbToTapered(newFaderDb)
-                        self.uad.setFader(chId: ch.id, tapered: tap)
-                    }
-                    // Immediately refresh physical motorized faders on active UF8 bank
-                    if let m = self.mcu {
-                        for slot in 0..<8 {
-                            let chId = m.bankOffset + slot
-                            if let ch = self.uad.channels[chId] {
-                                m.sendFaderPosition(slot: slot, normVal: ch.fader)
-                            }
-                        }
-                    }
-                    return "Balanced all motorized faders into a clean rough mix."
+                    return self.applyRoughMix()
                 }
             )
             findings.append(roughMixSuggestion)
