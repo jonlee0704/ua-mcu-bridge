@@ -1183,6 +1183,38 @@ public final class AIChatEngineTests {
             }
             assertTrue(repRedo.contains("Redid"), "Redo must succeed")
             assertEqual(eff0.parameters[1]?.normVal ?? 0.0, 0.75, "Gain must be reapplied to 0.75")
+
+            // 17. Combined Power Toggle & Value Change: "change the plugin settings like on and off, value changes etc."
+            let initialPower = eff0.power
+            var repCombined = ""
+            chat.processQuery(query: "change the plugin settings like on and off, value changes etc.", uad: uad, auditor: auditor) { rep in
+                repCombined = rep
+            }
+            assertTrue(repCombined.contains("Plugin Power & Settings Updated"), "Combined query must confirm both updates")
+            assertEqual(eff0.power, !initialPower, "Plugin power must be inverted by on/off request")
+            assertTrue((eff0.parameters[0]?.normVal ?? 0.0) > 0.0, "Plugin parameter must be updated")
+
+            // 18. Preposition 'on' must not falsely trigger enable: "bypass insert 1 on track 1"
+            chat.processQuery(query: "enable insert 1 on track 1", uad: uad, auditor: auditor) { _ in }
+            assertTrue(eff0.power, "Insert 1 must be enabled")
+            chat.processQuery(query: "bypass insert 1 on track 1", uad: uad, auditor: auditor) { _ in }
+            assertFalse(eff0.power, "'bypass insert 1 on track 1' must bypass, not enable (on track trap resolved)")
+
+            // 19. Semantic power action resolution test
+            assertTrue(AIChatEngine.determinePowerAction(in: "bypass insert 1 on track 1", currentPower: true) == false, "bypass must resolve to false")
+            assertTrue(AIChatEngine.determinePowerAction(in: "disable LA-2A on Lead Vox", currentPower: true) == false, "disable must resolve to false")
+            assertTrue(AIChatEngine.determinePowerAction(in: "turn off plugin on vocal", currentPower: true) == false, "turn off must resolve to false")
+            assertTrue(AIChatEngine.determinePowerAction(in: "turn on plugin on vocal", currentPower: false) == true, "turn on must resolve to true")
+            assertTrue(AIChatEngine.determinePowerAction(in: "toggle LA-2A", currentPower: false) == true, "toggle must flip false to true")
+
+            // 20. Reset Plugin Settings: "reset plugin settings on Lead Vox"
+            var repReset = ""
+            chat.processQuery(query: "reset plugin settings on Lead Vox", uad: uad, auditor: auditor) { rep in
+                repReset = rep
+            }
+            assertTrue(repReset.contains("Reset Plug-in Settings"), "Must confirm settings reset")
+            assertEqual(eff0.parameters[0]?.normVal ?? 0.0, 0.5, "Peak Reduction must be reset to 0.50 (nominal)")
+            assertEqual(eff0.parameters[1]?.normVal ?? 0.0, 0.5, "Gain must be reset to 0.50 (nominal)")
         }
     }
 

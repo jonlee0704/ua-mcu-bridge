@@ -415,7 +415,12 @@ public final class AIChatEngine: @unchecked Sendable {
             return
         }
 
-        if let pluginCmd = handlePluginCommandOnly(lower, rawQuery: text, uad: uad, auditor: auditor) {
+        if let preampResponse = handlePreampControlQuery(lower, rawQuery: text, uad: uad, auditor: auditor) {
+            completion(preampResponse)
+            return
+        }
+
+        if let pluginCmd = handlePluginControlCommand(lower, rawQuery: text, uad: uad, auditor: auditor) {
             completion(pluginCmd)
             return
         }
@@ -432,11 +437,6 @@ public final class AIChatEngine: @unchecked Sendable {
 
         if let panResponse = handlePanControlQuery(lower, rawQuery: text, uad: uad, auditor: auditor) {
             completion(panResponse)
-            return
-        }
-
-        if let preampResponse = handlePreampControlQuery(lower, rawQuery: text, uad: uad, auditor: auditor) {
-            completion(preampResponse)
             return
         }
 
@@ -495,13 +495,22 @@ public final class AIChatEngine: @unchecked Sendable {
         return nil
     }
 
-    /// Detects if query is a direct plugin bypass/enable/power command
-    private func handlePluginCommandOnly(_ lower: String, rawQuery: String, uad: UADClient, auditor: AIAudioAuditor) -> String? {
-        guard Self.isPluginQuery(lower) else { return nil }
-        let isQuestion = lower.contains("show") || lower.contains("what") || lower.contains("list") || lower.contains("which") || lower.contains("info") || lower.contains("how") || lower.contains("?")
-        if isQuestion { return nil }
-        let isPowerToggle = lower.contains("bypass") || lower.contains("unbypass") || lower.contains("enable") || lower.contains("disable") || lower.contains("turn on") || lower.contains("turn off") || lower.contains("toggle")
-        if isPowerToggle {
+    /// Detects if query is a direct plug-in or insert control command (power toggles, parameter/value adjustments, resets)
+    private func handlePluginControlCommand(_ lower: String, rawQuery: String, uad: UADClient, auditor: AIAudioAuditor) -> String? {
+        if handleHardwareGuideQuery(lower) != nil || lower.contains("how to") || lower.contains("how do") || lower.contains("how does") || lower.contains("guide") {
+            return nil
+        }
+
+        guard Self.isPluginQuery(lower) || lower.contains("plugin") || lower.contains("plug-in") || lower.contains("insert") || lower.contains("la-2a") || lower.contains("1176") || lower.contains("unison") else {
+            return nil
+        }
+
+        let hasActionVerb = lower.contains("turn on") || lower.contains("turn off") || lower.contains("bypass") || lower.contains("unbypass") || lower.contains("enable") || lower.contains("disable") || lower.contains("toggle") || lower.contains("power on") || lower.contains("power off") || lower.contains("activate") || lower.contains("deactivate") || lower.contains("switch on") || lower.contains("switch off") || lower.contains("set") || lower.contains("change") || lower.contains("adjust") || lower.contains("tweak") || lower.contains("tune") || lower.contains("reset") || lower.contains("turn up") || lower.contains("turn down") || lower.contains("boost") || lower.contains("cut") || lower.contains("raise") || lower.contains("lower") || lower.contains("increase") || lower.contains("decrease")
+
+        let isPureQuestion = (lower.starts(with: "what") || lower.starts(with: "show") || lower.starts(with: "list") || lower.starts(with: "which") || lower.starts(with: "info") || lower.starts(with: "how does") || lower.starts(with: "how do i") || lower.starts(with: "how to")) && !hasActionVerb
+        if isPureQuestion { return nil }
+
+        if hasActionVerb {
             return handlePluginQuery(lower, rawQuery: rawQuery, uad: uad, auditor: auditor)
         }
         return nil
@@ -554,14 +563,14 @@ public final class AIChatEngine: @unchecked Sendable {
             return cueResp
         }
 
-        // 10. UAD Plugins & Inserts Information
-        if Self.isPluginQuery(lower), let plugResp = handlePluginQuery(lower, rawQuery: rawQuery, uad: uad, auditor: auditor) {
-            return plugResp
-        }
-
-        // 11. SSL UF8 & Hardware Operation Guide
+        // 10. SSL UF8 & Hardware Operation Guide
         if let guideResponse = handleHardwareGuideQuery(lower) {
             return guideResponse
+        }
+
+        // 11. UAD Plugins & Inserts Information
+        if Self.isPluginQuery(lower), let plugResp = handlePluginQuery(lower, rawQuery: rawQuery, uad: uad, auditor: auditor) {
+            return plugResp
         }
 
         // 12. Mix Audit / Pre-Flight Inspection
@@ -1374,34 +1383,264 @@ public final class AIChatEngine: @unchecked Sendable {
         lines.append("")
         lines.append("💡 **SSL UF8 Tactile SENDS on Faders:**")
         lines.append("• Press **`SEND`** (`Note 41`) or double-tap **`SEL`** on any track to flip its 6 sends + Output + Pan across the 8 motorized faders.")
-        lines.append("• Step between channels with **`< BANK >`** or Master Jog Wheel without leaving Sends mode.")
-        lines.append("• Single-tap **`FLIP`** (`Note 50`) returns to Main Mix at current bank; double-tap snaps to Ch 1–8.")
+        lines.append("• Step between channels with **`< BANK >`** or `CHANNEL` encoder.")
+        lines.append("• Return to normal mixer mode anytime with **`PAN`**.")
         return lines.joined(separator: "\n")
     }
 
-    // MARK: - Local UAD Plug-ins & Inserts Information Engine (Instant 0ms, Zero Network Latency)
-
     public static func isPluginQuery(_ lower: String) -> Bool {
-        if lower.contains("how to tweak plugins") || lower.contains("how does plugin mode work") || lower.contains("how to use plugin mode") || lower.contains("plugin mode guide") || lower.contains("plug-in mode guide") || lower.contains("tweak plugin") {
+        if lower.contains("how to tweak plugins") || lower.contains("how does plugin mode work") || lower.contains("how to use plugin mode") || lower.contains("plugin mode guide") || lower.contains("plug-in mode guide") || lower.contains("ssl 360") {
             return false
         }
         let hasPlugin = lower.contains("plugin") || lower.contains("plugins") || lower.contains("plug-in") || lower.contains("plug-ins")
         let hasInsert = lower.contains("insert") || lower.contains("inserts")
         let hasUnison = lower.contains("unison")
         let hasDsp = lower.contains("dsp")
-        let hasParamWord = lower.contains("parameter") || lower.contains("param") || lower.contains("ratio") || lower.contains("threshold") || lower.contains("attack") || lower.contains("release") || lower.contains("peak reduction") || lower.contains("reduction") || (lower.contains("gain") && (lower.contains("plugin") || lower.contains("plug-in") || lower.contains("insert") || lower.contains("slot") || lower.contains("la-2a") || lower.contains("1176") || lower.contains("eq") || lower.contains("compressor") || lower.contains("unison"))) || (lower.contains("setting") && (lower.contains("plugin") || lower.contains("track") || lower.contains("vocal") || lower.contains("channel") || lower.contains("kick")))
-        let hasCompressorOrEq = lower.contains("compressor") || lower.contains("eq") || lower.contains("la-2a") || lower.contains("la2a") || lower.contains("1176") || lower.contains("fairchild") || lower.contains("pultec") || lower.contains("neve")
+        let hasParamWord = lower.contains("parameter") || lower.contains("param") || lower.contains("ratio") || lower.contains("threshold") || lower.contains("attack") || lower.contains("release") || lower.contains("peak reduction") || lower.contains("reduction") || (lower.contains("gain") && !lower.contains("preamp")) || lower.contains("mix") || lower.contains("freq") || lower.contains("setting") || lower.contains("value")
+        let hasCompressorOrEq = lower.contains("compressor") || lower.contains("eq") || lower.contains("la-2a") || lower.contains("la2a") || lower.contains("1176") || lower.contains("fairchild") || lower.contains("pultec") || lower.contains("neve") || lower.contains("manley") || lower.contains("api") || lower.contains("distressor")
         return hasPlugin || hasInsert || hasUnison || hasDsp || hasParamWord || hasCompressorOrEq
+    }
+
+    /// Resolves target channel, effect object, slot index, and unison flag across the session, hardware focus, or plugin name
+    public static func resolveTargetChannelAndEffect(
+        in uad: UADClient,
+        text: String,
+        auditor: AIAudioAuditor? = nil
+    ) -> (channel: UADChannel, effect: UADEffect, slotIndex: Int, isUnison: Bool)? {
+        let lower = text.lowercased()
+
+        // 1. Explicit channel by name or track number ("track 1", "ch 2", "vocal")
+        let explicitCh = findChannel(in: uad, text: lower)
+
+        // 2. Explicit slot number ("insert 1", "slot 2", "ins 3")
+        var targetSlot: Int? = nil
+        for i in 1...6 {
+            if lower.contains("insert \(i)") || lower.contains("ins \(i)") || lower.contains("slot \(i)") {
+                targetSlot = i - 1
+                break
+            }
+        }
+        let isUnisonExplicit = lower.contains("unison")
+
+        // 3. Known plugin name keywords
+        let pluginKeywords = [
+            "la-2a", "la2a", "1176", "fairchild", "pultec", "neve", "manley", "api", "ssl",
+            "precision", "studer", "lexicon", "empiric", "distressor", "avalon", "helios", "teletronix",
+            "compressor", "eq", "equalizer", "preamp", "reverb", "delay"
+        ]
+        var mentionedPluginKw: String? = nil
+        for kw in pluginKeywords {
+            if lower.contains(kw) {
+                mentionedPluginKw = kw
+                break
+            }
+        }
+
+        func effectOn(ch: UADChannel) -> (effect: UADEffect, slotIndex: Int, isUnison: Bool) {
+            if isUnisonExplicit && ch.preamp.hasPreamp {
+                return (ch.unisonEffect, 0, true)
+            }
+            if let s = targetSlot {
+                let eff = ch.effects[s] ?? UADEffect(index: s)
+                return (eff, s, false)
+            }
+            if let pKw = mentionedPluginKw {
+                for s in 0..<6 {
+                    if let eff = ch.effects[s], !eff.name.isEmpty && eff.name.lowercased().contains(pKw) {
+                        return (eff, s, false)
+                    }
+                }
+                if ch.preamp.hasPreamp && !ch.unisonEffect.name.isEmpty && ch.unisonEffect.name.lowercased().contains(pKw) {
+                    return (ch.unisonEffect, 0, true)
+                }
+            }
+            // Check if any insert effect explicitly has the requested parameter
+            let paramKeywords = ["peak reduction", "reduction", "ratio", "threshold", "attack", "release", "recovery", "gain", "makeup", "mix"]
+            for kw in paramKeywords where lower.contains(kw) {
+                for s in 0..<6 {
+                    if let eff = ch.effects[s], !eff.name.isEmpty {
+                        for (_, p) in eff.parameters {
+                            if p.name.lowercased().contains(kw) {
+                                return (eff, s, false)
+                            }
+                        }
+                    }
+                }
+                if ch.preamp.hasPreamp && !ch.unisonEffect.name.isEmpty {
+                    for (_, p) in ch.unisonEffect.parameters {
+                        if p.name.lowercased().contains(kw) {
+                            return (ch.unisonEffect, 0, true)
+                        }
+                    }
+                }
+            }
+            // Fallback: prioritize loaded insert effect first!
+            for s in 0..<6 {
+                if let eff = ch.effects[s], !eff.name.isEmpty && eff.name != "None" {
+                    return (eff, s, false)
+                }
+            }
+            if ch.preamp.hasPreamp && !ch.unisonEffect.name.isEmpty && ch.unisonEffect.name != "None" {
+                return (ch.unisonEffect, 0, true)
+            }
+            let defEff = ch.effects[0] ?? UADEffect(index: 0)
+            return (defEff, 0, false)
+        }
+
+        if let ch = explicitCh {
+            let res = effectOn(ch: ch)
+            return (ch, res.effect, res.slotIndex, res.isUnison)
+        }
+
+        // 4. No explicit channel: Search all channels for matching plugin keyword
+        let sortedChs = uad.channels.values.sorted { $0.id < $1.id }
+        if let pKw = mentionedPluginKw {
+            for ch in sortedChs {
+                for s in 0..<6 {
+                    if let eff = ch.effects[s], !eff.name.isEmpty && eff.name.lowercased().contains(pKw) {
+                        return (ch, eff, s, false)
+                    }
+                }
+                if ch.preamp.hasPreamp && !ch.unisonEffect.name.isEmpty && ch.unisonEffect.name.lowercased().contains(pKw) {
+                    return (ch, ch.unisonEffect, 0, true)
+                }
+            }
+        }
+
+        // 5. Hardware focus fallback: Check if SSL UF8 has a focused channel or selected strip
+        if let mcu = auditor?.mcu {
+            if mcu.pluginFocusMode, let ch = uad.channels[mcu.pluginFocusChannel] {
+                let s = mcu.pluginFocusSlotIdx
+                let isUni = (s == 0 && ch.preamp.hasPreamp)
+                let eff = isUni ? ch.unisonEffect : (ch.effects[s > 0 ? s - 1 : 0] ?? UADEffect(index: max(0, s - 1)))
+                return (ch, eff, max(0, s > 0 ? s - 1 : 0), isUni)
+            }
+            if let sel = mcu.selectedSlot, let ch = uad.channels[mcu.bankOffset + sel] {
+                let res = effectOn(ch: ch)
+                return (ch, res.effect, res.slotIndex, res.isUnison)
+            }
+        }
+
+        // 6. Global fallback: Find the first channel with ANY active or loaded effect
+        for ch in sortedChs {
+            for s in 0..<6 {
+                if let eff = ch.effects[s], !eff.name.isEmpty && eff.name != "None" {
+                    return (ch, eff, s, false)
+                }
+            }
+            if ch.preamp.hasPreamp && !ch.unisonEffect.name.isEmpty && ch.unisonEffect.name != "None" {
+                return (ch, ch.unisonEffect, 0, true)
+            }
+        }
+
+        // 7. Last resort: Channel 0 (Track 1)
+        if let ch0 = uad.channels[0] {
+            let res = effectOn(ch: ch0)
+            return (ch0, res.effect, res.slotIndex, res.isUnison)
+        }
+
+        return nil
+    }
+
+    /// Determines whether an action intends to enable (true) or bypass/disable (false) a plug-in.
+    public static func determinePowerAction(in text: String, currentPower: Bool) -> Bool {
+        let lower = text.lowercased()
+        if lower.contains("unbypass") || lower.contains("turn on") || lower.contains("power on") || lower.contains("enable") || lower.contains("activate") || lower.contains("switch on") {
+            return true
+        }
+        if lower.contains("bypass") || lower.contains("turn off") || lower.contains("power off") || lower.contains("disable") || lower.contains("deactivate") || lower.contains("switch off") {
+            return false
+        }
+        if lower.contains("toggle") || lower.contains("on and off") || lower.contains("on/off") {
+            return !currentPower
+        }
+        if lower.hasSuffix(" off") || lower.contains(" off ") {
+            return false
+        }
+        if lower.hasSuffix(" on") || lower.contains(" on ") {
+            let prepPattern = #"\bon\s+(?:track|channel|ch|tr|vocal|lead|snare|kick|guitar|bass|unison|all|\d+)\b"#
+            let isPreposition = lower.range(of: prepPattern, options: .regularExpression) != nil
+            if !isPreposition {
+                return true
+            }
+        }
+        return !currentPower
+    }
+
+    private func handleBypassedPluginsInspection(sortedChs: [UADChannel]) -> String {
+        var bypassedList: [String] = []
+        for ch in sortedChs {
+            if ch.preamp.hasPreamp {
+                let uniName = !ch.unisonEffect.name.isEmpty ? ch.unisonEffect.name : ch.preamp.unisonPluginName
+                if !uniName.isEmpty && uniName != "None" && (!ch.unisonEffect.power || !ch.preamp.unisonPower) {
+                    bypassedList.append("• **Track \(ch.id + 1) (\(ch.name)):** Unison — **\(uniName)**")
+                }
+            }
+            for s in 0..<6 {
+                if let eff = ch.effects[s], !eff.name.isEmpty, eff.name != "None", !eff.power {
+                    bypassedList.append("• **Track \(ch.id + 1) (\(ch.name)):** Insert \(s + 1) — **\(eff.name)**")
+                }
+            }
+        }
+
+        if bypassedList.isEmpty {
+            return "🟢 **All UAD Plug-ins Active:** No plug-ins or Unison models are currently bypassed across the 32 Apollo channels."
+        }
+        var lines: [String] = []
+        lines.append("⚪ **Bypassed UAD Plug-ins (\(bypassedList.count)):**")
+        lines.append(contentsOf: bypassedList)
+        lines.append("")
+        lines.append("💡 **Tip:** Say \"enable plugin on track [N]\" or press Mute on Strip 1 in UF8 Plugin Mode to re-engage.")
+        return lines.joined(separator: "\n")
     }
 
     private func handlePluginQuery(_ lower: String, rawQuery: String, uad: UADClient, auditor: AIAudioAuditor) -> String? {
         let sortedChs = uad.channels.values.sorted { $0.id < $1.id }
 
-        let isPowerToggle = lower.contains("bypass") || lower.contains("unbypass") || lower.contains("enable") || lower.contains("disable") || lower.contains("turn on") || lower.contains("turn off") || lower.contains("toggle")
+        // 0. Bypassed Plugins Query (e.g. "which plugins are bypassed?", "show bypassed plugins", "bypassed plugins")
+        if (lower.contains("bypassed") || lower.contains("disabled plugin")) && (lower.contains("which") || lower.contains("show") || lower.contains("what") || lower.contains("list") || lower.contains("are bypassed") || (!lower.contains("on") && !lower.contains("off") && !lower.contains("enable") && !lower.contains("disable"))) {
+            return handleBypassedPluginsInspection(sortedChs: sortedChs)
+        }
+
+        // 0.5 Combined Power Toggle + Settings Adjustment: e.g. "change plugin settings like on and off, value changes etc."
+        let hasPowerWord = lower.contains("on and off") || lower.contains("on/off") || (lower.contains("on") && lower.contains("off"))
+        let hasSettingWord = lower.contains("setting") || lower.contains("value") || lower.contains("param") || lower.contains("change")
+        if hasPowerWord && hasSettingWord, let target = Self.resolveTargetChannelAndEffect(in: uad, text: lower, auditor: auditor) {
+            let ch = target.channel
+            let eff = target.effect
+            let isUnison = target.isUnison
+            let slotIdx = target.slotIndex
+            let effName = !eff.name.isEmpty ? eff.name : (isUnison ? "Unison Preamp" : "Insert \(slotIdx + 1)")
+
+            let newPower = !eff.power
+            history.takeSnapshot(uad: uad, description: "Toggled \(effName) & adjusted settings on \(ch.name)")
+            uad.setEffectPower(chId: ch.id, eff: eff, power: newPower)
+            if isUnison { ch.preamp.unisonPower = newPower }
+
+            let pIdx = eff.parameters.keys.sorted().first ?? 0
+            let pObj = eff.parameters[pIdx] ?? UADEffectParam(index: pIdx, name: "Setting")
+            let newNorm = (pObj.normVal > 0.0 && pObj.normVal < 0.85) ? pObj.normVal + 0.15 : 0.60
+            uad.setEffectParameter(chId: ch.id, eff: eff, paramIdx: pIdx, normVal: newNorm)
+            pObj.normVal = newNorm
+            eff.parameters[pIdx] = pObj
+
+            auditor.mcu?.refreshPluginFocusSurface()
+            auditor.mcu?.refreshPreampFocusSurface()
+
+            return """
+            🎛️ **Plugin Power & Settings Updated:**
+            • **Plug-in:** **\(effName)** on Track \(ch.id + 1) (**\(ch.name)**)
+            • **Power State:** \(newPower ? "🟢 Active (Turned ON)" : "⚪ Bypassed (Turned OFF)")
+            • **Setting Value:** **\(pObj.name)** set to **\(String(format: "%.0f%%", newNorm * 100))** (Normalized: \(String(format: "%.2f", newNorm)))
+            • **Console Link:** Zero-latency socket commands synchronized with Universal Audio Apollo Console & SSL UF8.
+            """
+        }
+
+        let isPowerToggle = (lower.contains("bypass") || lower.contains("unbypass") || lower.contains("enable") || lower.contains("disable") || lower.contains("turn on") || lower.contains("turn off") || lower.contains("toggle") || lower.contains("power on") || lower.contains("power off") || lower.contains("activate") || lower.contains("deactivate") || lower.contains("switch on") || lower.contains("switch off") || lower.contains("on and off") || lower.contains("on/off")) && !lower.contains("which") && !lower.contains("what") && !lower.contains("show") && !lower.contains("list") && !lower.contains("are bypassed")
 
         // 1. Channel-wide Plugin Power: "bypass all plugins on track 1", "turn off plugins on vocal", "enable plugins on snare"
         if isPowerToggle, let ch = Self.findChannel(in: uad, text: lower), (lower.contains("all plugins") || lower.contains("all inserts") || lower.contains("plugins on") || lower.contains("all plug-ins") || (lower.contains("plugins") && !lower.contains("show") && !lower.contains("what") && !lower.contains("list") && !lower.contains("which") && !lower.contains("info") && !lower.contains("insert ") && !lower.contains("slot "))) {
-            let actualPowerOn = lower.contains("enable") || lower.contains("turn on") || lower.contains("unbypass") || lower.contains("activate")
+            let actualPowerOn = Self.determinePowerAction(in: lower, currentPower: true)
             history.takeSnapshot(uad: uad, description: "\(actualPowerOn ? "Enable" : "Bypass") all plug-ins on \(ch.name)")
             var count = 0
             if ch.preamp.hasPreamp && !ch.unisonEffect.name.isEmpty {
@@ -1421,8 +1660,8 @@ public final class AIChatEngine: @unchecked Sendable {
         }
 
         // 2. Global Plugin Power: "bypass all plugins", "turn off all plugins", "enable all plugins", "turn on all plugins"
-        if isPowerToggle && (lower.contains("all plugins") || lower.contains("plugins on all") || (lower.contains("all") && lower.contains("plugin"))) {
-            let actualPowerOn = lower.contains("enable") || lower.contains("turn on") || lower.contains("unbypass") || lower.contains("activate")
+        if isPowerToggle && (lower.contains("all plugins") || lower.contains("plugins on all") || (lower.contains("all") && (lower.contains("plugin") || lower.contains("insert")))) {
+            let actualPowerOn = Self.determinePowerAction(in: lower, currentPower: true)
             history.takeSnapshot(uad: uad, description: "\(actualPowerOn ? "Enable" : "Bypass") all plug-ins across console")
             var count = 0
             for ch in sortedChs {
@@ -1448,7 +1687,7 @@ public final class AIChatEngine: @unchecked Sendable {
             for i in 1...6 {
                 if lower.contains("insert \(i)") || lower.contains("ins \(i)") || lower.contains("slot \(i)") {
                     let sIdx = i - 1
-                    let actualPowerOn = lower.contains("enable") || lower.contains("turn on") || lower.contains("unbypass") || lower.contains("activate")
+                    let actualPowerOn = Self.determinePowerAction(in: lower, currentPower: true)
                     history.takeSnapshot(uad: uad, description: "\(actualPowerOn ? "Enable" : "Bypass") Insert \(i) across all channels")
                     var count = 0
                     for ch in sortedChs {
@@ -1463,74 +1702,39 @@ public final class AIChatEngine: @unchecked Sendable {
             }
         }
 
-        // 4. Single Plugin Power Control (Track + Slot OR Track + Plugin Name)
-        if isPowerToggle, let ch = Self.findChannel(in: uad, text: lower) {
-            let actualPowerOn = lower.contains("enable") || lower.contains("turn on") || lower.contains("unbypass") || lower.contains("activate") || (lower.contains("toggle") && !ch.unisonEffect.power)
+        // 4. Single Plugin Power Control (Track + Slot OR Track + Plugin Name OR Console Plugin Match OR Hardware Focus)
+        if isPowerToggle, let target = Self.resolveTargetChannelAndEffect(in: uad, text: lower, auditor: auditor) {
+            let ch = target.channel
+            let eff = target.effect
+            let isUnison = target.isUnison
+            let slotIdx = target.slotIndex
 
-            if lower.contains("unison") {
+            let actualPowerOn = Self.determinePowerAction(in: lower, currentPower: eff.power)
+
+            if isUnison {
                 if !ch.preamp.hasPreamp {
                     return "⚠️ Track \(ch.id + 1) (\(ch.name)) does not have an analog hardware preamp (Unison not supported on Line/Aux channels)."
                 }
-                let uniName = !ch.unisonEffect.name.isEmpty ? ch.unisonEffect.name : (!ch.preamp.unisonPluginName.isEmpty ? ch.preamp.unisonPluginName : "Unison Preamp")
+                let uniName = !eff.name.isEmpty ? eff.name : (!ch.preamp.unisonPluginName.isEmpty ? ch.preamp.unisonPluginName : "Unison Preamp")
                 history.takeSnapshot(uad: uad, description: "\(actualPowerOn ? "Enabled" : "Bypassed") Unison on \(ch.name)")
-                uad.setEffectPower(chId: ch.id, eff: ch.unisonEffect, power: actualPowerOn)
+                uad.setEffectPower(chId: ch.id, eff: eff, power: actualPowerOn)
                 ch.preamp.unisonPower = actualPowerOn
                 auditor.mcu?.refreshPluginFocusSurface()
                 auditor.mcu?.refreshPreampFocusSurface()
                 return "\(actualPowerOn ? "🟢 Enabled" : "⚪ Bypassed") Unison modeling plug-in (**\(uniName)**) on Track \(ch.id + 1) (**\(ch.name)**)."
             }
 
-            // Check if specific insert index is requested (insert 1..6)
-            var targetSlot: Int? = nil
-            for i in 1...6 {
-                if lower.contains("insert \(i)") || lower.contains("ins \(i)") || lower.contains("slot \(i)") {
-                    targetSlot = i - 1
-                    break
-                }
-            }
-
-            // If not found by slot number, check if a plugin is referenced by name
-            if targetSlot == nil {
-                for s in 0..<6 {
-                    if let eff = ch.effects[s], !eff.name.isEmpty {
-                        let effLow = eff.name.lowercased()
-                        if lower.contains(effLow) ||
-                           (lower.contains("la-2a") || lower.contains("la2a")) && effLow.contains("la-2a") ||
-                           lower.contains("1176") && effLow.contains("1176") ||
-                           lower.contains("fairchild") && effLow.contains("fairchild") ||
-                           lower.contains("pultec") && effLow.contains("pultec") ||
-                           lower.contains("neve") && effLow.contains("neve") ||
-                           lower.contains("eq") && effLow.contains("eq") ||
-                           lower.contains("compressor") && (effLow.contains("1176") || effLow.contains("la-2a") || effLow.contains("fairchild") || effLow.contains("compressor")) {
-                            targetSlot = s
-                            break
-                        }
-                    }
-                }
-            }
-
-            let slotIdx = targetSlot ?? 0
-            if let eff = ch.effects[slotIdx] {
-                let effName = eff.name.isEmpty ? "Insert \(slotIdx + 1)" : eff.name
-                let newPow = lower.contains("toggle") ? !eff.power : actualPowerOn
-                history.takeSnapshot(uad: uad, description: "\(newPow ? "Enabled" : "Bypassed") \(effName) on \(ch.name)")
-                uad.setEffectPower(chId: ch.id, eff: eff, power: newPow)
-                auditor.mcu?.refreshPluginFocusSurface()
-                return "\(newPow ? "🟢 Enabled" : "⚪ Bypassed") Insert \(slotIdx + 1) (**\(effName)**) on Track \(ch.id + 1) (**\(ch.name)**)."
-            }
+            let effName = eff.name.isEmpty ? "Insert \(slotIdx + 1)" : eff.name
+            let newPow = actualPowerOn
+            history.takeSnapshot(uad: uad, description: "\(newPow ? "Enabled" : "Bypassed") \(effName) on \(ch.name)")
+            uad.setEffectPower(chId: ch.id, eff: eff, power: newPow)
+            auditor.mcu?.refreshPluginFocusSurface()
+            return "\(newPow ? "🟢 Enabled" : "⚪ Bypassed") Insert \(slotIdx + 1) (**\(effName)**) on Track \(ch.id + 1) (**\(ch.name)**)."
         }
 
-        // 5. Direct Plugin Parameter & Setting Control:
-        // e.g. "set ratio to 4:1 on vocal", "set threshold to -18 dB on track 1", "set attack to 3 on vocal", "set release to 5 on kick",
-        //      "set peak reduction to 60 on vocal", "set gain to 35 on unison track 1", "set parameter 2 on track 1 to 0.75"
-        let isSettingChange = lower.contains("set") || lower.contains("change") || lower.contains("adjust") || lower.contains("tweak") || lower.contains("tune")
-        let hasParamWord = lower.contains("ratio") || lower.contains("threshold") || lower.contains("attack") || lower.contains("release") || lower.contains("peak reduction") || lower.contains("reduction") || lower.contains("gain") || lower.contains("mix") || lower.contains("freq") || lower.contains("parameter") || lower.contains("param") || lower.contains("p1") || lower.contains("p2") || lower.contains("input") || lower.contains("output") || lower.contains("recovery")
-        if isSettingChange && hasParamWord, let ch = Self.findChannel(in: uad, text: lower) {
-            return handlePluginParameterChange(lower: lower, rawQuery: rawQuery, channel: ch, uad: uad, auditor: auditor)
-        }
-
-        // 6. Reset Plugin Settings: "reset plugin settings on track 1", "reset plugins on vocal"
-        if lower.contains("reset") && (lower.contains("plugin") || lower.contains("setting") || lower.contains("parameter")), let ch = Self.findChannel(in: uad, text: lower) {
+        // 5. Reset Plugin Settings: "reset plugin settings on track 1", "reset plugins on vocal", "reset plugin settings"
+        if lower.contains("reset") && (lower.contains("plugin") || lower.contains("setting") || lower.contains("parameter")), let target = Self.resolveTargetChannelAndEffect(in: uad, text: lower, auditor: auditor) {
+            let ch = target.channel
             history.takeSnapshot(uad: uad, description: "Reset plug-in settings on \(ch.name)")
             var updated = 0
             if ch.preamp.hasPreamp {
@@ -1551,6 +1755,16 @@ public final class AIChatEngine: @unchecked Sendable {
             }
             auditor.mcu?.refreshPluginFocusSurface()
             return "🔄 **Reset Plug-in Settings:** Restored parameters to default (50% / nominal) across all plug-ins on Track \(ch.id + 1) (**\(ch.name)**)."
+        }
+
+        // 6. Direct Plugin Parameter & Setting Control:
+        // e.g. "set ratio to 4:1 on vocal", "set threshold to -18 dB on track 1", "set attack to 3 on vocal", "set release to 5 on kick",
+        //      "set peak reduction to 60 on vocal", "set gain to 35 on unison track 1", "set parameter 2 on track 1 to 0.75",
+        //      "change plugin settings to 80%", "turn up gain on LA-2A", "change value to 0.5"
+        let isSettingChange = !lower.contains("reset") && (lower.contains("set ") || lower.contains("set to") || lower.starts(with: "set ") || lower.contains("change") || lower.contains("adjust") || lower.contains("tweak") || lower.contains("tune") || lower.contains("turn up") || lower.contains("turn down") || lower.contains("boost") || lower.contains("cut") || lower.contains("raise") || lower.contains("lower") || lower.contains("increase") || lower.contains("decrease") || lower.contains("%") || lower.contains(":1"))
+        let hasParamWord = lower.contains("ratio") || lower.contains("threshold") || lower.contains("attack") || lower.contains("release") || lower.contains("peak reduction") || lower.contains("reduction") || lower.contains("gain") || lower.contains("mix") || lower.contains("freq") || lower.contains("parameter") || lower.contains("param") || lower.contains("p1") || lower.contains("p2") || lower.contains("input") || lower.contains("output") || lower.contains("recovery") || lower.contains("value") || lower.contains("setting") || lower.contains("%") || lower.contains(":1") || lower.contains("db") || lower.contains("plugin") || lower.contains("plug-in") || lower.contains("insert")
+        if isSettingChange && hasParamWord, let target = Self.resolveTargetChannelAndEffect(in: uad, text: lower, auditor: auditor) {
+            return handlePluginParameterChange(lower: lower, rawQuery: rawQuery, channel: target.channel, targetEff: target.effect, uad: uad, auditor: auditor)
         }
 
         // 2. Track-specific Plugin & Insert Query (e.g. "plugins on track 1", "plugins on vocal", "what plugins are on kick", "show inserts for guitar", "track 2 plugin info")
@@ -1715,12 +1929,12 @@ public final class AIChatEngine: @unchecked Sendable {
         return lines.joined(separator: "\n")
     }
 
-    private func handlePluginParameterChange(lower: String, rawQuery: String, channel: UADChannel, uad: UADClient, auditor: AIAudioAuditor) -> String? {
+    private func handlePluginParameterChange(lower: String, rawQuery: String, channel: UADChannel, targetEff explicitTarget: UADEffect? = nil, uad: UADClient, auditor: AIAudioAuditor) -> String? {
         // 1. Identify Target Effect
-        var targetEff: UADEffect? = nil
-        var effLabel: String = ""
+        var targetEff: UADEffect? = explicitTarget
+        var effLabel: String = explicitTarget?.name ?? ""
 
-        if lower.contains("unison") {
+        if targetEff == nil && lower.contains("unison") {
             if channel.preamp.hasPreamp {
                 targetEff = channel.unisonEffect
                 effLabel = !channel.unisonEffect.name.isEmpty ? channel.unisonEffect.name : (!channel.preamp.unisonPluginName.isEmpty ? channel.preamp.unisonPluginName : "Unison Preamp")
@@ -1767,7 +1981,6 @@ public final class AIChatEngine: @unchecked Sendable {
         if targetEff == nil {
             let kwList = ["peak reduction", "reduction", "ratio", "threshold", "attack", "release", "recovery", "input", "output", "gain", "frequency", "q", "mix"]
             for kw in kwList where lower.contains(kw) {
-                // Check inserts 0..<6 first
                 for s in 0..<6 {
                     if let eff = channel.effects[s], !eff.name.isEmpty {
                         for (_, p) in eff.parameters {
@@ -1781,7 +1994,6 @@ public final class AIChatEngine: @unchecked Sendable {
                     }
                 }
                 if targetEff != nil { break }
-                // Then check unison
                 if channel.preamp.hasPreamp && !channel.unisonEffect.name.isEmpty {
                     for (_, p) in channel.unisonEffect.parameters {
                         if p.name.lowercased().contains(kw) {
@@ -1811,8 +2023,18 @@ public final class AIChatEngine: @unchecked Sendable {
             }
         }
 
+        // Final fallback: use insert 0
+        if targetEff == nil {
+            targetEff = channel.effects[0] ?? UADEffect(index: 0)
+            effLabel = targetEff?.name.isEmpty == false ? targetEff!.name : "Insert 1"
+        }
+
         guard let eff = targetEff else {
             return "⚠️ No active plug-in was found on Track \(channel.id + 1) (\(channel.name)) to adjust."
+        }
+
+        if effLabel.isEmpty {
+            effLabel = eff.name.isEmpty ? "Plug-in" : eff.name
         }
 
         // 2. Identify Target Parameter
@@ -1848,7 +2070,7 @@ public final class AIChatEngine: @unchecked Sendable {
             }
         }
 
-        // If eff.parameters is empty, fallback to common standard plugin parameter layouts
+        // Fallback to common standard plugin parameter layouts or available parameters
         if targetParamIdx == nil {
             let effLow = eff.name.lowercased()
             if lower.contains("peak reduction") || (effLow.contains("la-2a") && lower.contains("reduction")) {
@@ -1887,9 +2109,12 @@ public final class AIChatEngine: @unchecked Sendable {
             } else if lower.contains("gain") {
                 targetParamIdx = 0
                 targetParamObj = eff.parameters[0] ?? UADEffectParam(index: 0, name: "Gain")
+            } else if let firstIdx = eff.parameters.keys.sorted().first, let p = eff.parameters[firstIdx] {
+                targetParamIdx = firstIdx
+                targetParamObj = p
             } else {
                 targetParamIdx = 0
-                targetParamObj = eff.parameters[0] ?? UADEffectParam(index: 0, name: "Parameter 1")
+                targetParamObj = eff.parameters[0] ?? UADEffectParam(index: 0, name: "Setting")
             }
         }
 
@@ -1901,9 +2126,18 @@ public final class AIChatEngine: @unchecked Sendable {
         var normVal: Double = 0.5
         var displayStr = "50%"
 
+        // Relative nudges: "turn up", "increase", "boost", "turn down", "cut", "decrease"
+        if lower.contains("turn up") || lower.contains("increase") || lower.contains("boost") || lower.contains("raise") {
+            let current = (pObj.normVal > 0.0) ? pObj.normVal : 0.5
+            normVal = min(1.0, current + 0.1)
+            displayStr = String(format: "+10%% (%.0f%%)", normVal * 100.0)
+        } else if lower.contains("turn down") || lower.contains("decrease") || lower.contains("cut") || lower.contains("lower") {
+            let current = (pObj.normVal > 0.0) ? pObj.normVal : 0.5
+            normVal = max(0.0, current - 0.1)
+            displayStr = String(format: "-10%% (%.0f%%)", normVal * 100.0)
+        }
         // Percentage (e.g. 75%, 40%)
-        let pctPattern = #"(\d+(?:\.\d+)?)\s*%"#
-        if let regex = try? NSRegularExpression(pattern: pctPattern),
+        else if let regex = try? NSRegularExpression(pattern: #"(\d+(?:\.\d+)?)\s*%"#),
            let match = regex.firstMatch(in: lower, options: [], range: NSRange(lower.startIndex..., in: lower)),
            let numRange = Range(match.range(at: 1), in: lower),
            let pct = Double(lower[numRange]) {
@@ -1938,18 +2172,21 @@ public final class AIChatEngine: @unchecked Sendable {
         } else if lower.contains("slow") || lower.contains("minimum") || lower.contains("min") || lower.contains("zero") {
             normVal = 0.0
             displayStr = "0% (Min / Slow)"
-        } else if lower.contains("default") || lower.contains("center") || lower.contains("half") || lower.contains("mid") {
+        } else if lower.contains("default") || lower.contains("center") || lower.contains("half") || lower.contains("mid") || lower.contains("nominal") {
             normVal = 0.5
             displayStr = "50% (Nominal)"
         }
-        // Numeric value (e.g. "to 0.75", "to 60", "to 4")
+        // Numeric value (e.g. "to 0.75", "to 60", "to -18")
         else {
             let numPattern = #"(?:to|set|at)\s*(-?\d+(?:\.\d+)?)"#
             if let regex = try? NSRegularExpression(pattern: numPattern, options: .caseInsensitive),
                let match = regex.firstMatch(in: lower, options: [], range: NSRange(lower.startIndex..., in: lower)),
                let numRange = Range(match.range(at: 1), in: lower),
                let num = Double(lower[numRange]) {
-                if num >= 0.0 && num <= 1.0 {
+                if num < 0.0 {
+                    normVal = max(0.0, min(1.0, (num + 60.0) / 60.0))
+                    displayStr = String(format: "%+.1f dB", num)
+                } else if num >= 0.0 && num <= 1.0 {
                     normVal = num
                     displayStr = String(format: "%.0f%%", num * 100.0)
                 } else if num > 1.0 && num <= 100.0 {
@@ -1959,11 +2196,14 @@ public final class AIChatEngine: @unchecked Sendable {
                     normVal = max(0.0, min(1.0, num / 100.0))
                     displayStr = "\(num)"
                 }
-            } else if let genRegex = try? NSRegularExpression(pattern: #"\b(\d+(?:\.\d+)?)\b"#),
+            } else if let genRegex = try? NSRegularExpression(pattern: #"\b(-?\d+(?:\.\d+)?)\b"#),
                       let match = genRegex.firstMatch(in: lower, options: [], range: NSRange(lower.startIndex..., in: lower)),
                       let numRange = Range(match.range(at: 1), in: lower),
                       let num = Double(lower[numRange]) {
-                if num >= 0.0 && num <= 1.0 {
+                if num < 0.0 {
+                    normVal = max(0.0, min(1.0, (num + 60.0) / 60.0))
+                    displayStr = String(format: "%+.1f dB", num)
+                } else if num >= 0.0 && num <= 1.0 {
                     normVal = num
                     displayStr = String(format: "%.0f%%", num * 100.0)
                 } else if num > 1.0 && num <= 100.0 {
@@ -2697,8 +2937,10 @@ public final class AIChatEngine: @unchecked Sendable {
             """
         }
 
+        let isHowWord = lower.contains("how to") || lower.contains("how do") || lower.contains("how does") || lower.contains("how can") || lower.starts(with: "how ") || lower.contains(" how ")
+
         // 2. CUE & Sends Focus Mode
-        if lower.contains("sends mode") || lower.contains("send mode") || lower.contains("cue mix") || lower.contains("headphone mix") || lower.contains("cue sends") || lower.contains("aux sends") || lower.contains("sends on fader") || (lower.contains("send") && (lower.contains("how") || lower.contains("what") || lower.contains("guide") || lower.contains("use"))) {
+        if lower.contains("sends mode") || lower.contains("send mode") || lower.contains("cue mix") || lower.contains("headphone mix") || lower.contains("cue sends") || lower.contains("aux sends") || lower.contains("sends on fader") || (lower.contains("send") && (isHowWord || lower.contains("what") || lower.contains("guide") || lower.contains("how to use"))) {
             return """
             🎛️ **Channel CUE & Sends Focus Mode (`SEND` Button / Note 41)**:
             • **How to Enter**: Press **`SEND`** or **Double-Tap `SEL`** on an already selected track.
@@ -2713,7 +2955,7 @@ public final class AIChatEngine: @unchecked Sendable {
         }
 
         // 3. Preamp Focus Mode
-        if lower.contains("preamp mode") || lower.contains("channel mode") || lower.contains("preamp focus") || lower.contains("+48v") || lower.contains("phantom power") || lower.contains("low cut") || lower.contains("phase invert") || (lower.contains("preamp") && (lower.contains("how") || lower.contains("control") || lower.contains("guide") || lower.contains("use"))) {
+        if lower.contains("preamp mode") || lower.contains("channel mode") || lower.contains("preamp focus") || lower.contains("+48v") || lower.contains("phantom power") || lower.contains("low cut") || lower.contains("phase invert") || (lower.contains("preamp") && (isHowWord || lower.contains("control") || lower.contains("guide") || lower.contains("how to use"))) {
             return """
             🎙️ **Preamp Focus Mode (`CHANNEL` Button / Note 40)**:
             • **How to Enter**: Select an analog Apollo channel and press **`CHANNEL`**.
@@ -2731,7 +2973,7 @@ public final class AIChatEngine: @unchecked Sendable {
         }
 
         // 4. Plug-in Inspector Mode
-        if lower.contains("plugin mode") || lower.contains("plug-in mode") || lower.contains("insert mode") || lower.contains("tweak plugin") || lower.contains("dsp plugin") || (lower.contains("plugin") && (lower.contains("how") || lower.contains("guide") || lower.contains("use"))) {
+        if lower.contains("plugin mode") || lower.contains("plug-in mode") || lower.contains("insert mode") || lower.contains("tweak plugin") || lower.contains("dsp plugin") || (lower.contains("plugin") && (isHowWord || lower.contains("guide") || lower.contains("how to use") || lower.contains("tweak"))) {
             return """
             🔌 **Tactile Plug-in & Insert Inspector (`PLUG-IN` Button / Note 43)**:
             • **How to Enter**: Select a track and press **`PLUG-IN`**.

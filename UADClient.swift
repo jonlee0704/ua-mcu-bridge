@@ -1205,17 +1205,17 @@ public final class UADClient {
     }
 
     public func setEffectPower(chId: Int, eff: UADEffect, power: Bool) {
-        guard let ch = channels[chId], !ch.devPath.isEmpty else { return }
-        let fid = nextFuncId()
-        let targetPath = eff.path.isEmpty ? (eff.isUnison ? "\(ch.devPath)/preamps/0/effects/0" : "\(ch.devPath)/effects/\(eff.index)") : eff.path
-        sendCommand("set \(targetPath)/Power/value?context_type=main&func_id=\(fid) \(power ? "true" : "false")")
         eff.power = power
         if eff.isUnison {
-            ch.preamp.unisonPower = power
+            channels[chId]?.preamp.unisonPower = power
             onChannelChange?("unison_prop", chId, ("Power", power))
         } else {
             onChannelChange?("effect_prop", chId, (eff.index, "Power", power))
         }
+        guard let ch = channels[chId], !ch.devPath.isEmpty else { return }
+        let fid = nextFuncId()
+        let targetPath = eff.path.isEmpty ? (eff.isUnison ? "\(ch.devPath)/preamps/0/effects/0" : "\(ch.devPath)/effects/\(eff.index)") : eff.path
+        sendCommand("set \(targetPath)/Power/value?context_type=main&func_id=\(fid) \(power ? "true" : "false")")
     }
 
     public func toggleEffectPower(chId: Int, eff: UADEffect) -> Bool {
@@ -1238,13 +1238,18 @@ public final class UADClient {
 
     public func setEffectParameter(chId: Int, eff: UADEffect, paramIdx: Int, normVal: Double) {
         let val = max(0.0, min(1.0, normVal))
-        let path = eff.path.isEmpty ? (channels[chId]?.devPath != nil ? "\(channels[chId]!.devPath)/effects/\(eff.index)" : "") : eff.path
+        if let p = eff.parameters[paramIdx] {
+            p.normVal = val
+        } else {
+            eff.parameters[paramIdx] = UADEffectParam(index: paramIdx, name: "Param \(paramIdx + 1)", normVal: val)
+        }
+        onChannelChange?("effect_param", chId, (eff.index, paramIdx, val))
+
+        guard let ch = channels[chId], !ch.devPath.isEmpty else { return }
+        let path = eff.path.isEmpty ? (eff.isUnison ? "\(ch.devPath)/preamps/0/effects/0" : "\(ch.devPath)/effects/\(eff.index)") : eff.path
         if !path.isEmpty {
             let fid = nextFuncId()
             sendCommand("set \(path)/parameters/\(paramIdx)/NormalizedValue/value?context_type=main&func_id=\(fid) \(String(format: "%.6f", val))")
-        }
-        if let p = eff.parameters[paramIdx] {
-            p.normVal = val
         }
     }
 
