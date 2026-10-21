@@ -156,10 +156,35 @@ public final class OllamaServiceManager: @unchecked Sendable {
         task.resume()
     }
 
+    /// Verifies model availability and automatically establishes alias if needed
+    public func ensureModelAlias(endpoint: String = "http://127.0.0.1:11434") {
+        let cleanEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: "\(cleanEndpoint)/api/tags") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.timeoutInterval = 2.0
+        let task = session.dataTask(with: req) { data, _, _ in
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let models = json["models"] as? [[String: Any]] else { return }
+            let names = models.compactMap { $0["name"] as? String }
+            let has3b = names.contains { $0.contains("llama3.2:3b") }
+            let hasPlain = names.contains { $0 == "llama3.2" || $0 == "llama3.2:latest" }
+            if has3b && !hasPlain {
+                let proc = Process()
+                proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+                proc.arguments = ["ollama", "cp", "llama3.2:3b", "llama3.2"]
+                try? proc.run()
+            }
+        }
+        task.resume()
+    }
+
     /// Automatically ensure Ollama is running. If not responding, starts via brew services or ollama serve in background.
     public func ensureOllamaRunning(endpoint: String = "http://127.0.0.1:11434", completion: @escaping @Sendable (Bool) -> Void) {
         isOllamaRunning(endpoint: endpoint) { [weak self] running in
             if running {
+                self?.ensureModelAlias(endpoint: endpoint)
                 completion(true)
                 return
             }
@@ -198,6 +223,7 @@ public final class OllamaServiceManager: @unchecked Sendable {
                 self.isOllamaRunning(endpoint: endpoint) { active in
                     if active {
                         timer.invalidate()
+                        self.ensureModelAlias(endpoint: endpoint)
                         completion(true)
                     } else if box.count >= maxAttempts {
                         timer.invalidate()
@@ -2352,12 +2378,14 @@ public final class AIChatEngine: @unchecked Sendable {
         }
     }
 
-    public func executeOllamaGenerate(prompt: String, uad: UADClient, auditor: AIAudioAuditor, completion: @escaping (String) -> Void) {
+    public func executeOllamaGenerate(prompt: String, uad: UADClient, auditor: AIAudioAuditor, modelOverride: String? = nil, completion: @escaping (String) -> Void) {
         let cleanEndpoint = ollamaEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: "\(cleanEndpoint)/api/generate") else {
             completion("Invalid Ollama endpoint: \(ollamaEndpoint)")
             return
         }
+
+        let targetModel = modelOverride ?? ollamaModel
 
         let chSummary = uad.channels.values.sorted { $0.id < $1.id }.map {
             "Ch \($0.id + 1) (\($0.name)): fader \(String(format: "%.1f", $0.faderDb))dB, pan \($0.pan == 0 ? "C" : ($0.pan < 0 ? "L" : "R")), mute \($0.mute), solo \($0.solo), peak \(String(format: "%.1f", $0.meterPeak))dBFS"
@@ -2405,7 +2433,7 @@ public final class AIChatEngine: @unchecked Sendable {
         """
 
         let payload: [String: Any] = [
-            "model": ollamaModel,
+            "model": targetModel,
             "prompt": prompt,
             "system": systemInstruction,
             "stream": false,
@@ -2460,6 +2488,14 @@ public final class AIChatEngine: @unchecked Sendable {
                     completion(formatted)
                 }
             } else if let err = json["error"] as? String {
+                if err.lowercased().contains("not found") && modelOverride == nil {
+                    // Try alternative model tag (e.g. if llama3.2 was requested, try llama3.2:3b, or vice-versa)
+                    let fallback = targetModel.contains(":") ? (targetModel.components(separatedBy: ":").first ?? targetModel) : "\(targetModel):3b"
+                    if fallback != targetModel {
+                        self.executeOllamaGenerate(prompt: prompt, uad: uad, auditor: auditor, modelOverride: fallback, completion: completion)
+                        return
+                    }
+                }
                 DispatchQueue.main.async {
                     completion("Local LLM (Ollama) Error: \(err)")
                 }
