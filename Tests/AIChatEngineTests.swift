@@ -1041,6 +1041,9 @@ public final class AIChatEngineTests {
             let effSnare = UADEffect(index: 0, isUnison: false)
             effSnare.name = "UA 1176LN Rev E"
             effSnare.power = true
+            effSnare.parameters[0] = UADEffectParam(index: 0, name: "Attack", strVal: "3", normVal: 0.3)
+            effSnare.parameters[1] = UADEffectParam(index: 1, name: "Release", strVal: "5", normVal: 0.5)
+            effSnare.parameters[2] = UADEffectParam(index: 2, name: "Ratio", strVal: "4:1", normVal: 0.0)
             ch1.effects[0] = effSnare
 
             // 2. "show plugins" with loaded plugins
@@ -1098,6 +1101,87 @@ public final class AIChatEngineTests {
             }
             assertTrue(repEnableCmd.contains("Enabled Insert 1"), "Must confirm enable")
             assertTrue(ch0.effects[0]?.power == true, "Insert 1 power must be true after enable")
+
+            // 8. Direct plugin bypass by plugin name: "bypass LA-2A on Lead Vox"
+            var repNameBypass = ""
+            chat.processQuery(query: "bypass LA-2A on Lead Vox", uad: uad, auditor: auditor) { rep in
+                repNameBypass = rep
+            }
+            assertTrue(repNameBypass.contains("Bypassed"), "Must confirm named plugin bypass")
+            assertFalse(ch0.effects[0]?.power ?? true, "LA-2A must be bypassed")
+
+            // 9. Global plugin enable: "enable all plugins"
+            var repEnableAll = ""
+            chat.processQuery(query: "enable all plugins", uad: uad, auditor: auditor) { rep in
+                repEnableAll = rep
+            }
+            assertTrue(repEnableAll.contains("Enabled All Plug-ins"), "Must confirm enabling all plugins")
+            assertTrue(ch0.effects[0]?.power == true, "Insert 0 must be enabled")
+            assertTrue(ch0.effects[1]?.power == true, "Insert 1 must be enabled")
+            assertTrue(ch0.unisonEffect.power == true, "Unison effect must be enabled")
+            assertTrue(ch1.effects[0]?.power == true, "Ch 1 Insert 0 must be enabled")
+
+            // 10. Global plugin bypass: "bypass all plugins"
+            var repBypassAll = ""
+            chat.processQuery(query: "bypass all plugins", uad: uad, auditor: auditor) { rep in
+                repBypassAll = rep
+            }
+            assertTrue(repBypassAll.contains("Bypassed All Plug-ins"), "Must confirm bypassing all plugins")
+            assertFalse(ch0.effects[0]?.power ?? true, "Insert 0 must be bypassed")
+            assertFalse(ch0.effects[1]?.power ?? true, "Insert 1 must be bypassed")
+            assertFalse(ch0.unisonEffect.power, "Unison effect must be bypassed")
+            assertFalse(ch1.effects[0]?.power ?? true, "Ch 1 Insert 0 must be bypassed")
+
+            // 11. Channel-wide plugin enable: "enable all plugins on Lead Vox"
+            var repEnableLead = ""
+            chat.processQuery(query: "enable all plugins on Lead Vox", uad: uad, auditor: auditor) { rep in
+                repEnableLead = rep
+            }
+            assertTrue(repEnableLead.contains("Enabled All Plug-ins") && repEnableLead.contains("Track 1"), "Must confirm enabling plugins on track 1")
+            assertTrue(ch0.effects[0]?.power == true, "Track 1 insert 0 must be enabled")
+            assertTrue(ch0.unisonEffect.power == true, "Track 1 Unison must be enabled")
+            assertFalse(ch1.effects[0]?.power ?? true, "Track 2 plugins must remain unchanged")
+
+            // 12. Direct parameter setting by ratio: "set ratio to 8:1 on Snare Top"
+            var repRatio = ""
+            chat.processQuery(query: "set ratio to 8:1 on Snare Top", uad: uad, auditor: auditor) { rep in
+                repRatio = rep
+            }
+            assertTrue(repRatio.contains("Ratio") || repRatio.contains("parameter"), "Must acknowledge ratio setting")
+            let snareRatioVal = effSnare.parameters[2]?.normVal ?? 0.0
+            assertTrue(abs(snareRatioVal - 0.333) < 0.01, "Ratio 8:1 must set normalized value to ~0.333")
+
+            // 13. Direct parameter setting by percentage: "set peak reduction to 60 on Lead Vox"
+            var repPeak = ""
+            chat.processQuery(query: "set peak reduction to 60 on Lead Vox", uad: uad, auditor: auditor) { rep in
+                repPeak = rep
+            }
+            assertTrue(repPeak.contains("Peak Reduction") || repPeak.contains("parameter"), "Must acknowledge peak reduction setting")
+            assertEqual(eff0.parameters[0]?.normVal ?? 0.0, 0.60, "Peak Reduction must be set to 0.60 (60%)")
+
+            // 14. Direct parameter setting by percentage with symbol: "set plugin gain to 75% on Lead Vox"
+            var repGain = ""
+            chat.processQuery(query: "set plugin gain to 75% on Lead Vox", uad: uad, auditor: auditor) { rep in
+                repGain = rep
+            }
+            assertTrue(repGain.contains("Gain") || repGain.contains("parameter"), "Must acknowledge gain setting")
+            assertEqual(eff0.parameters[1]?.normVal ?? 0.0, 0.75, "Gain must be set to 0.75 (75%)")
+
+            // 15. Undo restores previous plugin power and parameter values: "undo"
+            var repUndo = ""
+            chat.processQuery(query: "undo", uad: uad, auditor: auditor) { rep in
+                repUndo = rep
+            }
+            assertTrue(repUndo.contains("Undid"), "Undo must succeed")
+            assertEqual(eff0.parameters[1]?.normVal ?? 0.0, 0.60, "Gain must be restored to previous value 0.60")
+
+            // 16. Redo reapplies the parameter change: "redo"
+            var repRedo = ""
+            chat.processQuery(query: "redo", uad: uad, auditor: auditor) { rep in
+                repRedo = rep
+            }
+            assertTrue(repRedo.contains("Redid"), "Redo must succeed")
+            assertEqual(eff0.parameters[1]?.normVal ?? 0.0, 0.75, "Gain must be reapplied to 0.75")
         }
     }
 

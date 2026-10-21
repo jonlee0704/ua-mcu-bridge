@@ -1237,10 +1237,12 @@ public final class UADClient {
     }
 
     public func setEffectParameter(chId: Int, eff: UADEffect, paramIdx: Int, normVal: Double) {
-        guard !eff.path.isEmpty else { return }
         let val = max(0.0, min(1.0, normVal))
-        let fid = nextFuncId()
-        sendCommand("set \(eff.path)/parameters/\(paramIdx)/NormalizedValue/value?context_type=main&func_id=\(fid) \(String(format: "%.6f", val))")
+        let path = eff.path.isEmpty ? (channels[chId]?.devPath != nil ? "\(channels[chId]!.devPath)/effects/\(eff.index)" : "") : eff.path
+        if !path.isEmpty {
+            let fid = nextFuncId()
+            sendCommand("set \(path)/parameters/\(paramIdx)/NormalizedValue/value?context_type=main&func_id=\(fid) \(String(format: "%.6f", val))")
+        }
         if let p = eff.parameters[paramIdx] {
             p.normVal = val
         }
