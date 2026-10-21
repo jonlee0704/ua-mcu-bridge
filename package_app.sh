@@ -11,7 +11,18 @@ RESOURCES="$CONTENTS/Resources"
 echo "==> Building UA-MCU Bridge Native Menu Bar App..."
 
 # Compile Swift code
-swiftc -O -framework Cocoa "$DIR/app_build/main.swift" -o "$DIR/app_build/UAMCUBridge"
+swiftc -O -target arm64-apple-macos12.0 \
+  "$DIR/VoiceAnnouncer.swift" \
+  "$DIR/CoreMIDIAdapter.swift" \
+  "$DIR/UADModels.swift" \
+  "$DIR/UADCurve.swift" \
+  "$DIR/UADClient.swift" \
+  "$DIR/AIReportManager.swift" \
+  "$DIR/AIAudioAuditor.swift" \
+  "$DIR/AIChatEngine.swift" \
+  "$DIR/MCUEngine.swift" \
+  "$DIR/main.swift" \
+  -o "$DIR/app_build/UAMCUBridge"
 
 # Create App bundle structure
 rm -rf "$APP_DIR"

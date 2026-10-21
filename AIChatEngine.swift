@@ -122,14 +122,104 @@ public final class MixerHistoryManager {
     }
 }
 
+// MARK: - Local LLM (Ollama) Service Manager
+
+public final class OllamaServiceManager: @unchecked Sendable {
+    public static let shared = OllamaServiceManager()
+    private let session: URLSession
+
+    private init() {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 2.0
+        config.timeoutIntervalForResource = 3.0
+        self.session = URLSession(configuration: config)
+    }
+
+    /// Check if Ollama endpoint is actively responding
+    public func isOllamaRunning(endpoint: String = "http://127.0.0.1:11434", completion: @escaping @Sendable (Bool) -> Void) {
+        let cleanEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: "\(cleanEndpoint)/api/tags") else {
+            completion(false)
+            return
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.timeoutInterval = 2.0
+
+        let task = session.dataTask(with: req) { _, response, error in
+            if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) {
+                completion(true)
+            } else {
+                completion(false)
+            }
+        }
+        task.resume()
+    }
+
+    /// Automatically ensure Ollama is running. If not responding, starts via brew services or ollama serve in background.
+    public func ensureOllamaRunning(endpoint: String = "http://127.0.0.1:11434", completion: @escaping @Sendable (Bool) -> Void) {
+        isOllamaRunning(endpoint: endpoint) { [weak self] running in
+            if running {
+                completion(true)
+                return
+            }
+
+            guard let self = self else {
+                completion(false)
+                return
+            }
+
+            // 1. Attempt to launch via brew services
+            let brewProc = Process()
+            brewProc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+            brewProc.arguments = ["brew", "services", "start", "ollama"]
+            try? brewProc.run()
+
+            // 2. Also attempt direct launch of ollama binary in background if installed
+            let candidates = ["/opt/homebrew/bin/ollama", "/usr/local/bin/ollama"]
+            for path in candidates {
+                if FileManager.default.fileExists(atPath: path) {
+                    let proc = Process()
+                    proc.executableURL = URL(fileURLWithPath: path)
+                    proc.arguments = ["serve"]
+                    try? proc.run()
+                    break
+                }
+            }
+
+            // 3. Poll for readiness for up to 4.5 seconds
+            final class AttemptBox: @unchecked Sendable {
+                var count: Int = 0
+            }
+            let box = AttemptBox()
+            let maxAttempts = 6
+            Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { timer in
+                box.count += 1
+                self.isOllamaRunning(endpoint: endpoint) { active in
+                    if active {
+                        timer.invalidate()
+                        completion(true)
+                    } else if box.count >= maxAttempts {
+                        timer.invalidate()
+                        completion(false)
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - AI Chat Engine & Natural Language Intent Processor
 
-public final class AIChatEngine {
+public final class AIChatEngine: @unchecked Sendable {
     public static let shared = AIChatEngine()
 
     public let history = MixerHistoryManager()
     public var geminiApiKey: String = ""
     public var geminiModel: String = "gemini-3.8-flash"
+    public var aiProvider: String = "auto" // "auto", "local", "gemini"
+    public var ollamaEndpoint: String = "http://127.0.0.1:11434"
+    public var ollamaModel: String = "llama3.2"
 
     // Cancellation & In-flight Task Management
     public private(set) var isQueryCancelled: Bool = false
@@ -367,10 +457,36 @@ public final class AIChatEngine {
             return
         }
 
-        // 15. Free-form Question: Route to Google Gemini API if API key configured
-        if !geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            queryGeminiAPI(prompt: text, uad: uad, auditor: auditor, completion: completion)
+        // 15. Natural Language & AI Audio Consultation
+        let currentProvider = aiProvider.lowercased()
+        if currentProvider == "local" {
+            queryLocalLLM(prompt: text, uad: uad, auditor: auditor, completion: completion)
             return
+        } else if currentProvider == "gemini" {
+            if !geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                queryGeminiAPI(prompt: text, uad: uad, auditor: auditor, completion: completion)
+                return
+            } else {
+                completion("Google Gemini is selected as your AI provider, but no API key is configured. Use 'Settings' -> 'Configure Google Gemini API Key' to enter your key, or switch provider to Local Llama 3.2.")
+                return
+            }
+        } else {
+            // Auto Mode
+            let hasGemini = !geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if hasGemini {
+                OllamaServiceManager.shared.isOllamaRunning(endpoint: ollamaEndpoint) { [weak self] running in
+                    guard let self = self else { return }
+                    if running {
+                        self.executeOllamaGenerate(prompt: text, uad: uad, auditor: auditor, completion: completion)
+                    } else {
+                        self.queryGeminiAPI(prompt: text, uad: uad, auditor: auditor, completion: completion)
+                    }
+                }
+                return
+            } else if lower.hasPrefix("why") || lower.hasPrefix("how") || lower.hasPrefix("what") || lower.hasPrefix("can you") || lower.hasPrefix("explain") || lower.contains("?") {
+                queryLocalLLM(prompt: text, uad: uad, auditor: auditor, completion: completion)
+                return
+            }
         }
 
         // 16. Fallback Help Guidance
@@ -659,19 +775,26 @@ public final class AIChatEngine {
         )
 
         let cleanKey = geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !cleanKey.isEmpty {
-            let prompt = """
-            User prompt: "\(rawQuery)"
-            The user requested to listen for \(String(format: "%.1f", duration)) seconds and analyze: "\(subQuery)".
-            We conducted a real-time 32-channel audio telemetry capture of the Universal Audio Apollo Console over \(String(format: "%.1f", duration)) seconds.
-            Here is the recorded telemetry data across monitored tracks:
-            \(formatTelemetryForGemini(summaries: summaries))
+        let currentProv = aiProvider.lowercased()
+        let prompt = """
+        User prompt: "\(rawQuery)"
+        The user requested to listen for \(String(format: "%.1f", duration)) seconds and analyze: "\(subQuery)".
+        We conducted a real-time 32-channel audio telemetry capture of the Universal Audio Apollo Console over \(String(format: "%.1f", duration)) seconds.
+        Here is the recorded telemetry data across monitored tracks:
+        \(formatTelemetryForGemini(summaries: summaries))
 
-            Please provide an expert audio engineering assessment answering: "\(subQuery)".
-            Provide actionable mixing advice, gain staging recommendations, and reference tactile SSL UF8 controls where relevant.
-            """
+        Please provide an expert audio engineering assessment answering: "\(subQuery)".
+        Provide actionable mixing advice, gain staging recommendations, and reference tactile SSL UF8 controls where relevant.
+        """
+
+        if currentProv == "local" {
+            queryLocalLLM(prompt: prompt, uad: uad, auditor: auditor) { localReply in
+                let combined = summaryMarkdown + "\n\n---\n\n" + localReply
+                completion(combined)
+            }
+        } else if (currentProv == "gemini" || currentProv == "auto") && !cleanKey.isEmpty {
             queryGeminiAPI(prompt: prompt, uad: uad, auditor: auditor) { geminiReply in
-                let combined = summaryMarkdown + "\n\n---\n\n🧠 **AI Co-Producer Analysis:**\n\n" + geminiReply
+                let combined = summaryMarkdown + "\n\n---\n\n🧠 **AI Co-Producer Analysis (Gemini 3.8 Flash):**\n\n" + geminiReply
                 completion(combined)
             }
         } else {
@@ -2206,6 +2329,158 @@ public final class AIChatEngine {
         return nil
     }
 
+    // MARK: - Local LLM (Ollama / Llama 3.2) REST API Client
+
+    public func queryLocalLLM(prompt: String, uad: UADClient, auditor: AIAudioAuditor, completion: @escaping (String) -> Void) {
+        OllamaServiceManager.shared.ensureOllamaRunning(endpoint: ollamaEndpoint) { [weak self] running in
+            guard let self = self else { return }
+            if !running {
+                DispatchQueue.main.async {
+                    completion("""
+                    ⚠️ **Local Llama 3.2 is Offline** (Could not connect to Ollama at \(self.ollamaEndpoint))
+
+                    To activate Local Llama 3.2, start Ollama by running:
+                    `ollama serve` (or launch `/opt/homebrew/bin/ollama serve`)
+
+                    Expected model: `\(self.ollamaModel)`
+                    Offline mixer commands, CUE sends, fader motor unity, preamp inspection, and tactile navigation remain 100% operational in 0ms!
+                    """)
+                }
+                return
+            }
+            self.executeOllamaGenerate(prompt: prompt, uad: uad, auditor: auditor, completion: completion)
+        }
+    }
+
+    public func executeOllamaGenerate(prompt: String, uad: UADClient, auditor: AIAudioAuditor, completion: @escaping (String) -> Void) {
+        let cleanEndpoint = ollamaEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: "\(cleanEndpoint)/api/generate") else {
+            completion("Invalid Ollama endpoint: \(ollamaEndpoint)")
+            return
+        }
+
+        let chSummary = uad.channels.values.sorted { $0.id < $1.id }.map {
+            "Ch \($0.id + 1) (\($0.name)): fader \(String(format: "%.1f", $0.faderDb))dB, pan \($0.pan == 0 ? "C" : ($0.pan < 0 ? "L" : "R")), mute \($0.mute), solo \($0.solo), peak \(String(format: "%.1f", $0.meterPeak))dBFS"
+        }.joined(separator: "\n")
+
+        let hardwareManualKnowledge = """
+        OFFICIAL SSL UF8 & UNIVERSAL AUDIO APOLLO BRIDGE MANUAL & SPECIFICATION:
+        1. HARDWARE ARCHITECTURE:
+           - Controller: Solid State Logic (SSL) UF8 Advanced DAW Controller (8x motorized faders, scribble strips, V-Pots, rotary wheel).
+           - Audio Engine: Universal Audio Apollo DSP Mixer (127.0.0.1:4710).
+           - MIDI Layer: macOS CoreMIDI over SSL 360° Layer 3, Logic Pro MCU profile, SSL V-MIDI Port 9.
+        2. TACTILE FADER GESTURES:
+           - Unity Gain (0.0 dB): AUTO + SEL or Double-Tap SEL.
+           - Minimum Floor (-oo dB): Long-Press SEL (> 0.5s).
+           - Motor Interlock: Capacitive touch sense releases clutch instantly.
+           - Banking: < PAGE > jumps 8 channels; < BANK > nudges 1 single track.
+        3. CUE & SENDS FOCUS MODE (SEND Button / Note 41):
+           - Strips 1-2: AUX 1 & 2 master sends; Strips 3-6: CUE 1-4 headphone mixes; Strip 7: Track output; Strip 8: Pan.
+        4. PREAMP FOCUS MODE (CHANNEL Button / Note 40):
+           - Preamp Gain, +48V double-tap safety, -20dB Pad, 75Hz Low-Cut, Phase Invert, Unison DSP bypass.
+        5. PLUG-IN & INSERT INSPECTOR (PLUG-IN Button / Note 43):
+           - Keys 1-8: Key 1 = Unison; Keys 2-7 = Inserts 1-6; Key 8 = REC vs MON.
+        6. MONITORING & HEARING PROTECTION:
+           - Master Monitor Volume: Rotary Wheel (±1 dB/tick). Emergency Mute: Center Circle Key (Note 100).
+        7. TALKBACK & MASTER AUX:
+           - Channel 25: Slate Talkback mic. Channels 26 & 27: Master AUX 1 & 2 returns.
+        8. AI CO-PRODUCER (FINE Key / Note 70):
+           - Short press: 3-step acoustic pre-flight inspection; Long press: Opens chat window.
+        """
+
+        let systemInstruction = """
+        You are S&D Co-Producer, an expert AI audio engineer embedded inside the UA-MCU Bridge for SSL UF8 and Universal Audio Apollo interfaces, running on Local Llama 3.2.
+        You have authoritative knowledge of the official hardware specifications, MIDI protocols, surface layouts, gestures, and operational manuals for both the SSL UF8 and UAD Apollo Console.
+        When answering user questions:
+        1. Always explain the exact physical hardware buttons, faders, V-Pots, LED tallies, and gestures required on the SSL UF8 surface.
+        2. Reference specific hardware functions: e.g., AUTO+SEL for 0.0 dB Unity Gain, Long-Press SEL for -oo dB floor, CHANNEL key for Preamp Focus, SEND key for Cue mixes, PLUG-IN key for DSP parameter pages, FLIP for returning home, and the Center Circle key for emergency Monitor Mute.
+        3. Provide professional, world-class audio engineering advice (gain staging, EQ carving, compression ratios, acoustic troubleshooting) tailored to Universal Audio analog modeling plugins (1176, LA-2A, Neve 1073, Pultec, etc.).
+        4. Keep explanations concise, structured, and immediately actionable for tactile and screen-reader accessibility.
+
+        Reference Specification & Manual:
+        \(hardwareManualKnowledge)
+
+        Current Apollo Mixer State:
+        \(chSummary)
+        """
+
+        let payload: [String: Any] = [
+            "model": ollamaModel,
+            "prompt": prompt,
+            "system": systemInstruction,
+            "stream": false,
+            "options": [
+                "temperature": 0.7,
+                "num_predict": 1024
+            ]
+        ]
+
+        guard let httpBody = try? JSONSerialization.data(withJSONObject: payload) else {
+            completion("Failed to serialize Local LLM request payload.")
+            return
+        }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = httpBody
+        req.timeoutInterval = 75.0
+
+        let session = URLSession(configuration: .default)
+        let task = session.dataTask(with: req) { [weak self] data, response, error in
+            guard let self = self else { return }
+            self.queryLock.lock()
+            let wasCancelled = self.isQueryCancelled
+            self.activeTask = nil
+            self.queryLock.unlock()
+
+            if wasCancelled || (error as NSError?)?.code == NSURLErrorCancelled {
+                DispatchQueue.main.async { completion("⏹ *Execution cancelled.*") }
+                return
+            }
+
+            if let error = error {
+                DispatchQueue.main.async {
+                    completion("Local LLM Error: \(error.localizedDescription)")
+                }
+                return
+            }
+
+            guard let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                DispatchQueue.main.async {
+                    completion("Failed to parse response from Local LLM (Ollama).")
+                }
+                return
+            }
+
+            if let reply = json["response"] as? String, !reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let formatted = "🧠 **AI Co-Producer Analysis (Local Llama 3.2):**\n\n" + reply.trimmingCharacters(in: .whitespacesAndNewlines)
+                DispatchQueue.main.async {
+                    completion(formatted)
+                }
+            } else if let err = json["error"] as? String {
+                DispatchQueue.main.async {
+                    completion("Local LLM (Ollama) Error: \(err)")
+                }
+            } else {
+                DispatchQueue.main.async {
+                    completion("Empty response received from Local LLM.")
+                }
+            }
+        }
+
+        queryLock.lock()
+        if isQueryCancelled {
+            queryLock.unlock()
+            completion("⏹ *Execution cancelled.*")
+            return
+        }
+        activeTask = task
+        queryLock.unlock()
+        task.resume()
+    }
+
     // MARK: - Google Gemini REST API Client
 
     private func queryGeminiAPI(prompt: String, uad: UADClient, auditor: AIAudioAuditor, completion: @escaping (String) -> Void) {
@@ -2662,6 +2937,74 @@ public final class ApiKeyDialogAccessoryView: NSView {
 
     @objc private func handleClear() {
         inputField.stringValue = ""
+    }
+}
+
+public final class OllamaConfigDialogAccessoryView: NSView {
+    public let endpointField: PasteableTextField
+    public let modelField: PasteableTextField
+    public let statusLabel: NSTextField
+    public let testButton: NSButton
+    public let startButton: NSButton
+
+    public init(endpoint: String, model: String) {
+        endpointField = PasteableTextField(frame: NSRect(x: 0, y: 78, width: 440, height: 26))
+        modelField = PasteableTextField(frame: NSRect(x: 0, y: 38, width: 440, height: 26))
+        testButton = NSButton(title: "⚡ Test Endpoint", target: nil, action: nil)
+        startButton = NSButton(title: "🚀 Start Ollama Service", target: nil, action: nil)
+        statusLabel = NSTextField(labelWithString: "Status: Ready")
+        super.init(frame: NSRect(x: 0, y: 0, width: 440, height: 110))
+
+        endpointField.stringValue = endpoint
+        endpointField.placeholderString = "http://127.0.0.1:11434"
+        endpointField.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        addSubview(endpointField)
+
+        modelField.stringValue = model
+        modelField.placeholderString = "llama3.2 or llama3.2:3b"
+        modelField.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        addSubview(modelField)
+
+        testButton.bezelStyle = .roundRect
+        testButton.frame = NSRect(x: 0, y: 6, width: 130, height: 24)
+        testButton.target = self
+        testButton.action = #selector(handleTest)
+        addSubview(testButton)
+
+        startButton.bezelStyle = .roundRect
+        startButton.frame = NSRect(x: 138, y: 6, width: 160, height: 24)
+        startButton.target = self
+        startButton.action = #selector(handleStart)
+        addSubview(startButton)
+
+        statusLabel.font = NSFont.systemFont(ofSize: 11)
+        statusLabel.textColor = NSColor.secondaryLabelColor
+        statusLabel.frame = NSRect(x: 306, y: 6, width: 134, height: 24)
+        addSubview(statusLabel)
+    }
+
+    public required init?(coder: NSCoder) { fatalError() }
+
+    @objc private func handleTest() {
+        statusLabel.stringValue = "Testing..."
+        let ep = endpointField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        OllamaServiceManager.shared.isOllamaRunning(endpoint: ep) { [weak self] running in
+            DispatchQueue.main.async {
+                self?.statusLabel.stringValue = running ? "● Online" : "○ Offline"
+                self?.statusLabel.textColor = running ? NSColor.systemGreen : NSColor.systemRed
+            }
+        }
+    }
+
+    @objc private func handleStart() {
+        statusLabel.stringValue = "Starting..."
+        let ep = endpointField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        OllamaServiceManager.shared.ensureOllamaRunning(endpoint: ep) { [weak self] running in
+            DispatchQueue.main.async {
+                self?.statusLabel.stringValue = running ? "● Online (Started)" : "○ Failed to start"
+                self?.statusLabel.textColor = running ? NSColor.systemGreen : NSColor.systemRed
+            }
+        }
     }
 }
 
@@ -3597,6 +3940,35 @@ public final class ApiKeyDialogHelper {
     }
 }
 
+public final class OllamaConfigDialogHelper {
+    public static func present(
+        title: String = "Configure Local LLM (Ollama)",
+        currentEndpoint: String,
+        currentModel: String,
+        window: NSWindow?,
+        onSave: @escaping (_ endpoint: String, _ model: String) -> Void
+    ) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = "Configure Local LLM via Ollama server.\nDefault endpoint: http://127.0.0.1:11434, Recommended model: llama3.2."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let accessory = OllamaConfigDialogAccessoryView(endpoint: currentEndpoint, model: currentModel)
+        alert.accessoryView = accessory
+
+        NSApp.activate(ignoringOtherApps: true)
+        alert.window.initialFirstResponder = accessory.endpointField
+
+        let res = alert.runModal()
+        if res == .alertFirstButtonReturn {
+            let ep = accessory.endpointField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            let mod = accessory.modelField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            onSave(ep.isEmpty ? "http://127.0.0.1:11434" : ep, mod.isEmpty ? "llama3.2" : mod)
+        }
+    }
+}
+
 // MARK: - Native AppKit Gemini-Style Web UI Implementation
 
 public final class FlippedCanvasView: NSView {
@@ -3739,6 +4111,7 @@ public final class AIChatWindowController: NSWindowController, NSTextFieldDelega
     private weak var thinkingStatusLabel: NSTextField?
     private var currentThinkingText: String = "✦ S&D Co-Producer is thinking..."
     private var customFieldEditor: CustomFieldEditorTextView?
+    private var modelBadge: NSTextField!
 
     /// Closure provider to obtain the screen frame of the app's Mac status bar item
     public static var statusItemFrameProvider: (() -> NSRect?)?
@@ -3785,6 +4158,7 @@ public final class AIChatWindowController: NSWindowController, NSTextFieldDelega
             controller.showWindow(nil)
             controller.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
+            controller.updateModelBadge()
             if let field = controller.inputField {
                 controller.window?.makeFirstResponder(field)
                 field.selectText(nil)
@@ -3859,7 +4233,7 @@ public final class AIChatWindowController: NSWindowController, NSTextFieldDelega
         headerBar.addSubview(brandTitle)
 
         // Model Badge Pill
-        let modelBadge = NSTextField(labelWithString: "3.8 Flash • Apollo Live")
+        modelBadge = NSTextField(labelWithString: "Auto • Live")
         modelBadge.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         modelBadge.textColor = NSColor(red: 0.55, green: 0.82, blue: 1.0, alpha: 1.0)
         modelBadge.wantsLayer = true
@@ -3868,14 +4242,15 @@ public final class AIChatWindowController: NSWindowController, NSTextFieldDelega
         modelBadge.layer?.borderWidth = 0.8
         modelBadge.layer?.borderColor = NSColor(red: 0.25, green: 0.45, blue: 0.80, alpha: 0.6).cgColor
         modelBadge.alignment = .center
-        modelBadge.frame = NSRect(x: 200, y: 16, width: 145, height: 20)
+        modelBadge.frame = NSRect(x: 200, y: 16, width: 155, height: 20)
         headerBar.addSubview(modelBadge)
+        updateModelBadge()
 
         // Prompt Guide Button
         let promptGuideBtn = NSButton(title: "📖 Prompt Guide", target: self, action: #selector(handleShowPromptHelp))
         promptGuideBtn.bezelStyle = .roundRect
         promptGuideBtn.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        promptGuideBtn.frame = NSRect(x: headerBar.bounds.width - 342, y: 14, width: 120, height: 26)
+        promptGuideBtn.frame = NSRect(x: headerBar.bounds.width - 346, y: 14, width: 120, height: 26)
         promptGuideBtn.autoresizingMask = [.minXMargin]
         headerBar.addSubview(promptGuideBtn)
 
@@ -3883,17 +4258,17 @@ public final class AIChatWindowController: NSWindowController, NSTextFieldDelega
         let newChatBtn = NSButton(title: "+ New Chat", target: self, action: #selector(handleNewChat))
         newChatBtn.bezelStyle = .roundRect
         newChatBtn.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        newChatBtn.frame = NSRect(x: headerBar.bounds.width - 215, y: 14, width: 95, height: 26)
+        newChatBtn.frame = NSRect(x: headerBar.bounds.width - 220, y: 14, width: 98, height: 26)
         newChatBtn.autoresizingMask = [.minXMargin]
         headerBar.addSubview(newChatBtn)
 
-        // API Key Settings Button
-        let apiKeyBtn = NSButton(title: "⚙️ API Key", target: self, action: #selector(handleSetApiKey))
-        apiKeyBtn.bezelStyle = .roundRect
-        apiKeyBtn.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        apiKeyBtn.frame = NSRect(x: headerBar.bounds.width - 112, y: 14, width: 92, height: 26)
-        apiKeyBtn.autoresizingMask = [.minXMargin]
-        headerBar.addSubview(apiKeyBtn)
+        // Provider & Settings Button
+        let providerBtn = NSButton(title: "⚙️ Provider", target: self, action: #selector(handleOpenProviderMenu(_:)))
+        providerBtn.bezelStyle = .roundRect
+        providerBtn.font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        providerBtn.frame = NSRect(x: headerBar.bounds.width - 116, y: 14, width: 96, height: 26)
+        providerBtn.autoresizingMask = [.minXMargin]
+        headerBar.addSubview(providerBtn)
 
         let divider = NSBox(frame: NSRect(x: 0, y: 0, width: headerBar.bounds.width, height: 1))
         divider.boxType = .separator
@@ -4934,6 +5309,106 @@ public final class AIChatWindowController: NSWindowController, NSTextFieldDelega
         messages.removeAll()
         renderCanvas()
         inputField.stringValue = ""
+    }
+
+    public func updateModelBadge() {
+        guard let badge = modelBadge else { return }
+        let provider = AIChatEngine.shared.aiProvider.lowercased()
+        switch provider {
+        case "local":
+            badge.stringValue = "Llama 3.2 • Apollo Live"
+            badge.textColor = NSColor(red: 0.40, green: 0.95, blue: 0.65, alpha: 1.0)
+            badge.layer?.borderColor = NSColor(red: 0.20, green: 0.80, blue: 0.45, alpha: 0.6).cgColor
+            badge.layer?.backgroundColor = NSColor(red: 0.10, green: 0.25, blue: 0.16, alpha: 0.7).cgColor
+        case "gemini":
+            badge.stringValue = "3.8 Flash • Apollo Live"
+            badge.textColor = NSColor(red: 0.55, green: 0.82, blue: 1.0, alpha: 1.0)
+            badge.layer?.borderColor = NSColor(red: 0.25, green: 0.45, blue: 0.80, alpha: 0.6).cgColor
+            badge.layer?.backgroundColor = NSColor(red: 0.15, green: 0.22, blue: 0.35, alpha: 0.7).cgColor
+        default: // auto
+            badge.stringValue = "Auto (Llama 3.2) • Live"
+            badge.textColor = NSColor(red: 0.95, green: 0.80, blue: 0.40, alpha: 1.0)
+            badge.layer?.borderColor = NSColor(red: 0.80, green: 0.60, blue: 0.20, alpha: 0.6).cgColor
+            badge.layer?.backgroundColor = NSColor(red: 0.30, green: 0.22, blue: 0.10, alpha: 0.7).cgColor
+        }
+    }
+
+    @objc private func handleOpenProviderMenu(_ sender: NSButton) {
+        let menu = NSMenu(title: "AI Provider & Settings")
+
+        let autoItem = NSMenuItem(title: "Auto (Local Llama 3.2 if available, else Gemini)", action: #selector(handleSelectProviderMode(_:)), keyEquivalent: "")
+        autoItem.target = self
+        autoItem.representedObject = "auto"
+        autoItem.state = (AIChatEngine.shared.aiProvider == "auto") ? .on : .off
+        menu.addItem(autoItem)
+
+        let localItem = NSMenuItem(title: "Local LLM Only (Ollama - Llama 3.2)", action: #selector(handleSelectProviderMode(_:)), keyEquivalent: "")
+        localItem.target = self
+        localItem.representedObject = "local"
+        localItem.state = (AIChatEngine.shared.aiProvider == "local") ? .on : .off
+        menu.addItem(localItem)
+
+        let geminiItem = NSMenuItem(title: "Google Gemini Cloud (API Key)", action: #selector(handleSelectProviderMode(_:)), keyEquivalent: "")
+        geminiItem.target = self
+        geminiItem.representedObject = "gemini"
+        geminiItem.state = (AIChatEngine.shared.aiProvider == "gemini") ? .on : .off
+        menu.addItem(geminiItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let configOllamaItem = NSMenuItem(title: "Configure Local LLM Endpoint (Ollama)...", action: #selector(handleConfigureOllama), keyEquivalent: "")
+        configOllamaItem.target = self
+        menu.addItem(configOllamaItem)
+
+        let configGeminiItem = NSMenuItem(title: "Configure Google Gemini API Key...", action: #selector(handleSetApiKey), keyEquivalent: "")
+        configGeminiItem.target = self
+        menu.addItem(configGeminiItem)
+
+        let startOllamaItem = NSMenuItem(title: "Start / Check Local Ollama Service", action: #selector(handleStartOllamaService), keyEquivalent: "")
+        startOllamaItem.target = self
+        menu.addItem(startOllamaItem)
+
+        let location = NSPoint(x: 0, y: sender.bounds.height + 4)
+        menu.popUp(positioning: nil, at: location, in: sender)
+    }
+
+    @objc private func handleSelectProviderMode(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? String else { return }
+        AIChatEngine.shared.aiProvider = mode
+        UserDefaults.standard.set(mode, forKey: "UAMCUAIProvider")
+        updateModelBadge()
+        let desc = mode == "local" ? "Local LLM Only (Ollama - Llama 3.2)" : (mode == "gemini" ? "Google Gemini Cloud API" : "Auto Mode (Local Llama 3.2 preferred)")
+        messages.append(ChatMessage(sender: .system, text: "AI Provider switched to: \(desc)", timestamp: Date()))
+        renderCanvas()
+    }
+
+    @objc private func handleConfigureOllama() {
+        OllamaConfigDialogHelper.present(
+            currentEndpoint: AIChatEngine.shared.ollamaEndpoint,
+            currentModel: AIChatEngine.shared.ollamaModel,
+            window: self.window
+        ) { [weak self] ep, mod in
+            guard let self = self else { return }
+            AIChatEngine.shared.ollamaEndpoint = ep
+            AIChatEngine.shared.ollamaModel = mod
+            UserDefaults.standard.set(ep, forKey: "UAMCUOllamaEndpoint")
+            UserDefaults.standard.set(mod, forKey: "UAMCUOllamaModel")
+            self.updateModelBadge()
+            self.messages.append(ChatMessage(sender: .system, text: "Local LLM configured: \(mod) at \(ep)", timestamp: Date()))
+            self.renderCanvas()
+        }
+    }
+
+    @objc private func handleStartOllamaService() {
+        self.messages.append(ChatMessage(sender: .system, text: "Checking / starting Local Ollama service in background...", timestamp: Date()))
+        self.renderCanvas()
+        OllamaServiceManager.shared.ensureOllamaRunning(endpoint: AIChatEngine.shared.ollamaEndpoint) { [weak self] running in
+            DispatchQueue.main.async {
+                let msg = running ? "● Local Ollama is online and ready!" : "○ Local Ollama could not be reached. Ensure Ollama is installed."
+                self?.messages.append(ChatMessage(sender: .system, text: msg, timestamp: Date()))
+                self?.renderCanvas()
+            }
+        }
     }
 
     @objc private func handleSetApiKey() {

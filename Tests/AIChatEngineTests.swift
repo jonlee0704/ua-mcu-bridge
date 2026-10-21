@@ -35,6 +35,7 @@ public final class AIChatEngineTests {
         testPromptCatalogDataIntegrityAndCategories()
         testDynamicContextualSuggestionsGeneration()
         testPromptHelpPageUIAndQueryTrigger()
+        testLocalLLMAndOllamaProviderConfiguration()
     }
 
     /// Test FINE button short press (normal 3-step cycle) vs long press (open chat window)
@@ -1360,6 +1361,65 @@ public final class AIChatEngineTests {
             let anchoredFrame = chatWin.frame
             assertTrue(anchoredFrame.minY < 980, "Chat window must be positioned below status bar icon")
             AIChatWindowController.statusItemFrameProvider = nil
+        }
+    }
+
+    /// Test Local LLM (Ollama / Llama 3.2), Provider switching, and auto-fallback
+    public static func testLocalLLMAndOllamaProviderConfiguration() {
+        runTest("P0: Local LLM (Ollama) provider switching, custom endpoint/model, and offline fallback") {
+            let engine = AIChatEngine.shared
+            let prevProvider = engine.aiProvider
+            let prevEndpoint = engine.ollamaEndpoint
+            let prevModel = engine.ollamaModel
+
+            // 1. Default properties
+            assertEqual(engine.ollamaEndpoint, "http://127.0.0.1:11434", "Default endpoint must be http://127.0.0.1:11434")
+            assertEqual(engine.ollamaModel, "llama3.2", "Default model must be llama3.2")
+
+            // 2. Provider switching
+            engine.aiProvider = "local"
+            assertEqual(engine.aiProvider, "local", "aiProvider must be set to local")
+
+            engine.aiProvider = "gemini"
+            assertEqual(engine.aiProvider, "gemini", "aiProvider must be set to gemini")
+
+            engine.aiProvider = "auto"
+            assertEqual(engine.aiProvider, "auto", "aiProvider must be set to auto")
+
+            // 3. Custom endpoint and model
+            engine.ollamaEndpoint = "http://localhost:11434"
+            assertEqual(engine.ollamaEndpoint, "http://localhost:11434", "Endpoint must update")
+
+            engine.ollamaModel = "llama3.2:3b"
+            assertEqual(engine.ollamaModel, "llama3.2:3b", "Model must update")
+
+            // 4. Model Badge Updates in AIChatWindowController
+            let (mcu, uad, _) = TestAudioFixture.makeMCUEngine(channelCount: 8)
+            let controller = AIChatWindowController(uad: uad, auditor: mcu.auditor)
+
+            engine.aiProvider = "local"
+            controller.updateModelBadge()
+
+            engine.aiProvider = "gemini"
+            controller.updateModelBadge()
+
+            engine.aiProvider = "auto"
+            controller.updateModelBadge()
+
+            // 5. Test OllamaServiceManager running check with invalid endpoint
+            let sema = DispatchSemaphore(value: 0)
+            var reportedRunning = true
+            OllamaServiceManager.shared.isOllamaRunning(endpoint: "http://invalid-host-9999:1234") { isRunning in
+                reportedRunning = isRunning
+                sema.signal()
+            }
+            _ = sema.wait(timeout: .now() + 2.0)
+            assertFalse(reportedRunning, "Invalid host must report not running")
+
+            // Restore engine settings
+            engine.aiProvider = prevProvider
+            engine.ollamaEndpoint = prevEndpoint
+            engine.ollamaModel = prevModel
         }
     }
 }

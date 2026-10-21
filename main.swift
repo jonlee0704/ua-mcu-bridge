@@ -25,6 +25,9 @@ struct BridgeConfig: Codable {
     var speechRate: Float = 0.52
     var sendLabels: [String] = ["AUX 1", "AUX 2", "HP 1", "HP 2", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
     var geminiApiKey: String = ""
+    var aiProvider: String = "auto" // "auto", "local", "gemini"
+    var ollamaEndpoint: String = "http://127.0.0.1:11434"
+    var ollamaModel: String = "llama3.2"
 
     enum CodingKeys: String, CodingKey {
         case port = "port"
@@ -34,6 +37,9 @@ struct BridgeConfig: Codable {
         case speechRate = "speech_rate"
         case sendLabels = "send_labels"
         case geminiApiKey = "gemini_api_key"
+        case aiProvider = "ai_provider"
+        case ollamaEndpoint = "ollama_endpoint"
+        case ollamaModel = "ollama_model"
     }
 }
 
@@ -74,6 +80,15 @@ final class ConfigManager {
             if let savedKey = UserDefaults.standard.string(forKey: "UAMCUGeminiApiKey") {
                 config.geminiApiKey = savedKey
             }
+            if let savedProvider = UserDefaults.standard.string(forKey: "UAMCUAIProvider") {
+                config.aiProvider = savedProvider
+            }
+            if let savedOllama = UserDefaults.standard.string(forKey: "UAMCUOllamaEndpoint") {
+                config.ollamaEndpoint = savedOllama
+            }
+            if let savedModel = UserDefaults.standard.string(forKey: "UAMCUOllamaModel") {
+                config.ollamaModel = savedModel
+            }
         }
         let defaultSendLabels = ["AUX 1", "AUX 2", "HP 1", "HP 2", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
         if config.sendLabels.count < 8 {
@@ -99,6 +114,9 @@ final class ConfigManager {
         UserDefaults.standard.set(config.speechRate, forKey: "UAMCUSpeechRate")
         UserDefaults.standard.set(config.sendLabels, forKey: "UAMCUSendLabels")
         UserDefaults.standard.set(config.geminiApiKey, forKey: "UAMCUGeminiApiKey")
+        UserDefaults.standard.set(config.aiProvider, forKey: "UAMCUAIProvider")
+        UserDefaults.standard.set(config.ollamaEndpoint, forKey: "UAMCUOllamaEndpoint")
+        UserDefaults.standard.set(config.ollamaModel, forKey: "UAMCUOllamaModel")
     }
 }
 
@@ -231,6 +249,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             AIChatWindowController.show(uad: self.uadClient, auditor: self.mcuEngine.auditor)
         }
         AIChatEngine.shared.geminiApiKey = config.geminiApiKey
+        AIChatEngine.shared.aiProvider = config.aiProvider
+        AIChatEngine.shared.ollamaEndpoint = config.ollamaEndpoint
+        AIChatEngine.shared.ollamaModel = config.ollamaModel
 
         // 4. Connect MIDI Port
         connectMIDIPort(config.port)
@@ -263,6 +284,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.async {
                 if connected {
                     bridgeLog("[Bridge] UA Mixer Engine connected successfully")
+                    let modeStr = self?.config.aiProvider == "local" ? "Local LLM Only" : (self?.config.aiProvider == "gemini" ? "Gemini 3.8 Flash" : "Auto mode")
+                    let announcement = "UA-MCU Bridge version 1.0 started. SSL V-MIDI Port \(self?.config.port ?? 9) connected. AI Co-Producer Beta ready with \(modeStr), Local Llama 3.2."
+                    bridgeLog("[Bridge] Spoken Startup Announcement: \(announcement)")
+                    VoiceAnnouncer.shared.speak(announcement)
+
+                    // Auto-ensure Ollama service is active
+                    if let ep = self?.config.ollamaEndpoint {
+                        OllamaServiceManager.shared.ensureOllamaRunning(endpoint: ep) { active in
+                            if active {
+                                bridgeLog("[Bridge] Local Ollama service is online and active.")
+                            } else {
+                                bridgeLog("[Bridge] Local Ollama service is currently offline.")
+                            }
+                        }
+                    }
+
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         self?.mcuEngine.refreshAllSlots()
                     }
@@ -518,9 +555,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         openChatWindowItem.target = self
         aiReportMenu.addItem(openChatWindowItem)
 
+        // AI Model & Provider Submenu
+        let providerMenu = NSMenu(title: "AI Engine & Provider")
+
+        let autoItem = NSMenuItem(title: "Auto (Local Llama 3.2 if available, else Gemini)", action: #selector(handleSelectAIProvider(_:)), keyEquivalent: "")
+        autoItem.target = self
+        autoItem.representedObject = "auto"
+        autoItem.state = (config.aiProvider == "auto") ? .on : .off
+        providerMenu.addItem(autoItem)
+
+        let localItem = NSMenuItem(title: "Local LLM Only (Ollama - Llama 3.2)", action: #selector(handleSelectAIProvider(_:)), keyEquivalent: "")
+        localItem.target = self
+        localItem.representedObject = "local"
+        localItem.state = (config.aiProvider == "local") ? .on : .off
+        providerMenu.addItem(localItem)
+
+        let geminiItem = NSMenuItem(title: "Google Gemini Cloud (API Key)", action: #selector(handleSelectAIProvider(_:)), keyEquivalent: "")
+        geminiItem.target = self
+        geminiItem.representedObject = "gemini"
+        geminiItem.state = (config.aiProvider == "gemini") ? .on : .off
+        providerMenu.addItem(geminiItem)
+
+        providerMenu.addItem(NSMenuItem.separator())
+
+        let configOllamaItem = NSMenuItem(title: "Configure Local LLM Endpoint (Ollama)...", action: #selector(handleConfigureOllamaEndpoint(_:)), keyEquivalent: "")
+        configOllamaItem.target = self
+        providerMenu.addItem(configOllamaItem)
+
         let configGeminiItem = NSMenuItem(title: "Configure Google Gemini API Key...", action: #selector(handleConfigureGeminiKey(_:)), keyEquivalent: "")
         configGeminiItem.target = self
-        aiReportMenu.addItem(configGeminiItem)
+        providerMenu.addItem(configGeminiItem)
+
+        let startOllamaItem = NSMenuItem(title: "Start / Check Local Ollama Service", action: #selector(handleStartOllamaServiceMenu(_:)), keyEquivalent: "")
+        startOllamaItem.target = self
+        providerMenu.addItem(startOllamaItem)
+
+        let providerParentItem = NSMenuItem(title: "AI Engine & Provider", action: nil, keyEquivalent: "")
+        providerParentItem.submenu = providerMenu
+        aiReportMenu.addItem(providerParentItem)
+
         aiReportMenu.addItem(NSMenuItem.separator())
 
         let openReportsWindowItem = NSMenuItem(title: "Open AI Reports Window...", action: #selector(handleOpenAIReportsWindow(_:)), keyEquivalent: "")
@@ -823,6 +896,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             AIChatEngine.shared.geminiApiKey = newKey
             ConfigManager.shared.save(self.config)
             VoiceAnnouncer.shared.speak(newKey.isEmpty ? "Gemini key removed" : "Gemini API key saved")
+        }
+    }
+
+    @objc private func handleSelectAIProvider(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? String else { return }
+        config.aiProvider = mode
+        AIChatEngine.shared.aiProvider = mode
+        ConfigManager.shared.save(config)
+        buildMenu()
+        let desc = mode == "local" ? "Local Llama 3.2" : (mode == "gemini" ? "Google Gemini" : "Auto mode with Local Llama")
+        VoiceAnnouncer.shared.speak("AI Provider set to \(desc)")
+    }
+
+    @objc private func handleConfigureOllamaEndpoint(_ sender: Any?) {
+        OllamaConfigDialogHelper.present(
+            currentEndpoint: config.ollamaEndpoint,
+            currentModel: config.ollamaModel,
+            window: nil
+        ) { [weak self] ep, mod in
+            guard let self = self else { return }
+            self.config.ollamaEndpoint = ep
+            self.config.ollamaModel = mod
+            AIChatEngine.shared.ollamaEndpoint = ep
+            AIChatEngine.shared.ollamaModel = mod
+            ConfigManager.shared.save(self.config)
+            VoiceAnnouncer.shared.speak("Local LLM endpoint saved")
+        }
+    }
+
+    @objc private func handleStartOllamaServiceMenu(_ sender: Any?) {
+        VoiceAnnouncer.shared.speak("Starting Local Ollama service")
+        OllamaServiceManager.shared.ensureOllamaRunning(endpoint: config.ollamaEndpoint) { running in
+            DispatchQueue.main.async {
+                VoiceAnnouncer.shared.speak(running ? "Local Ollama service is online" : "Failed to start Local Ollama service")
+            }
         }
     }
 
