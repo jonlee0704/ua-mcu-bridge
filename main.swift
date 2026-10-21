@@ -25,7 +25,7 @@ struct BridgeConfig: Codable {
     var speechRate: Float = 0.52
     var sendLabels: [String] = ["AUX 1", "AUX 2", "HP 1", "HP 2", "CUE 3", "CUE 4", "OUTPUT", "PAN"]
     var geminiApiKey: String = ""
-    var aiProvider: String = "auto" // "auto", "local", "gemini"
+    var aiProvider: String = "local" // "local" (default), "auto", "gemini"
     var ollamaEndpoint: String = "http://127.0.0.1:11434"
     var ollamaModel: String = "llama3.2"
 
@@ -564,7 +564,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         autoItem.state = (config.aiProvider == "auto") ? .on : .off
         providerMenu.addItem(autoItem)
 
-        let localItem = NSMenuItem(title: "Local LLM Only (Ollama - Llama 3.2)", action: #selector(handleSelectAIProvider(_:)), keyEquivalent: "")
+        let localItem = NSMenuItem(title: "Local LLM Only (Ollama - Llama 3.2 - Default)", action: #selector(handleSelectAIProvider(_:)), keyEquivalent: "")
         localItem.target = self
         localItem.representedObject = "local"
         localItem.state = (config.aiProvider == "local") ? .on : .off

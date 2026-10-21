@@ -305,7 +305,8 @@ public final class AIChatEngine: @unchecked Sendable {
     public let history = MixerHistoryManager()
     public var geminiApiKey: String = ""
     public var geminiModel: String = "gemini-3.8-flash"
-    public var aiProvider: String = "auto" // "auto", "local", "gemini"
+    public var aiProvider: String = "local" // "local" (default), "auto", "gemini"
+    public var preferLocalLLMOverTelemetry: Bool = true
     public var ollamaEndpoint: String = "http://127.0.0.1:11434"
     public var ollamaModel: String = "llama3.2"
 
@@ -384,21 +385,13 @@ public final class AIChatEngine: @unchecked Sendable {
             return
         }
 
-        // 1. Overloaded / Clipping Channels
-        if Self.isOverloadQuery(lower) {
-            let response = handleOverloadQuery(uad: uad, auditor: auditor)
-            completion(response)
-            return
-        }
-
-        // 2. Set -infinite dB for all channels
+        // 1. Direct Physical Actions & Hardware Mutations (0ms Local Execution)
         if Self.isSetAllInfinityQuery(lower) {
             let response = handleSetAllInfinity(uad: uad)
             completion(response)
             return
         }
 
-        // 3. Undo / -1 step back in history
         if Self.isUndoQuery(lower) {
             if let desc = history.undo(uad: uad) {
                 completion("↩️ Undid: \(desc). Mixer state restored to previous step.")
@@ -408,7 +401,6 @@ public final class AIChatEngine: @unchecked Sendable {
             return
         }
 
-        // 4. Redo / step forward in history
         if Self.isRedoQuery(lower) {
             if let desc = history.redo(uad: uad) {
                 completion("🔁 Redid: \(desc).")
@@ -418,167 +410,179 @@ public final class AIChatEngine: @unchecked Sendable {
             return
         }
 
-        // 5. CUE & Sends Information & Tactile Control (Local 0ms, Zero Gemini API)
-        if Self.isCueQuery(lower) {
-            if let cueResponse = handleCueQuery(lower, rawQuery: text, uad: uad, auditor: auditor) {
-                completion(cueResponse)
-                return
-            }
+        if let cueCmd = handleCueCommandOnly(lower, rawQuery: text, uad: uad, auditor: auditor) {
+            completion(cueCmd)
+            return
         }
 
-        // 6. UAD Plugins & Inserts Information & Control (Local 0ms, Zero Gemini API)
-        if Self.isPluginQuery(lower) {
-            if let pluginResponse = handlePluginQuery(lower, rawQuery: text, uad: uad, auditor: auditor) {
-                completion(pluginResponse)
-                return
-            }
+        if let pluginCmd = handlePluginCommandOnly(lower, rawQuery: text, uad: uad, auditor: auditor) {
+            completion(pluginCmd)
+            return
         }
 
-        // 6. Track Mute / Unmute / Solo (Local 0ms)
         if let trackResponse = handleTrackMuteSoloQuery(lower, rawQuery: text, uad: uad, auditor: auditor) {
             completion(trackResponse)
             return
         }
 
-        // 7. Motorized Fader & Volume Control (Local 0ms)
         if let faderResponse = handleFaderControlQuery(lower, rawQuery: text, uad: uad, auditor: auditor) {
             completion(faderResponse)
             return
         }
 
-        // 8. Pan & Stereo Balance (Local 0ms)
         if let panResponse = handlePanControlQuery(lower, rawQuery: text, uad: uad, auditor: auditor) {
             completion(panResponse)
             return
         }
 
-        // 9. Preamp Focus Controls: 48V, Low Cut, Pad, Phase, Gain (Local 0ms)
         if let preampResponse = handlePreampControlQuery(lower, rawQuery: text, uad: uad, auditor: auditor) {
             completion(preampResponse)
             return
         }
 
-        // 10. Master Monitor Volume & Mute (Local 0ms)
         if let monitorResponse = handleMonitorControlQuery(lower, rawQuery: text, uad: uad) {
             completion(monitorResponse)
             return
         }
 
-        // 11. SSL UF8 Surface Modes & Navigation: Banking, Sends, Preamp, Main Mix, Rough Mix (Local 0ms)
         if let surfaceResponse = handleSurfaceControlQuery(lower, rawQuery: text, uad: uad, auditor: auditor) {
             completion(surfaceResponse)
             return
         }
 
-        // 12. UAD REC / UAD MON Toggle (Local 0ms)
         if let recMonResponse = handleUADRecMonQuery(lower, uad: uad) {
             completion(recMonResponse)
             return
         }
 
-        // 7. Zero Input / Silent Channels (Local UAD Console Telemetry - Instant 0ms)
+        // 2. Interactive Conversational & AI Telemetry Comprehension (Local LLM by Default)
+        let currentProvider = aiProvider.lowercased()
+        let isInteractive = (progress != nil)
+
+        if preferLocalLLMOverTelemetry && (currentProvider == "local" || currentProvider == "auto") && isInteractive {
+            progress?("Thinking with Local Llama 3.2...")
+            let fallbackHandler: () -> String = { [weak self] in
+                guard let self = self else { return "" }
+                return self.handleOfflineTelemetryOrInquiry(lower: lower, rawQuery: text, uad: uad, auditor: auditor)
+            }
+            queryLocalLLM(prompt: text, uad: uad, auditor: auditor, fallback: fallbackHandler, completion: completion)
+            return
+        }
+
+        if currentProvider == "gemini" && !geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && isInteractive {
+            progress?("Querying Google Gemini 3.8 Flash...")
+            queryGeminiAPI(prompt: text, uad: uad, auditor: auditor, completion: completion)
+            return
+        }
+
+        // 3. Offline Synchronous Telemetry & Inspection (For Unit Tests, Offline Mode & Fallback)
+        let response = handleOfflineTelemetryOrInquiry(lower: lower, rawQuery: text, uad: uad, auditor: auditor)
+        completion(response)
+    }
+
+    /// Detects if query is a direct CUE send mute/unmute or gain level command
+    private func handleCueCommandOnly(_ lower: String, rawQuery: String, uad: UADClient, auditor: AIAudioAuditor) -> String? {
+        guard Self.isCueQuery(lower) else { return nil }
+        let isQuestion = lower.contains("show") || lower.contains("what") || lower.contains("list") || lower.contains("which") || lower.contains("info") || lower.contains("who") || lower.contains("?")
+        if isQuestion { return nil }
+        let labels = getSendLabels(auditor: auditor)
+        let isMute = lower.contains("mute") && !lower.contains("unmute")
+        let isUnmute = lower.contains("unmute")
+        let isGain = (lower.contains("set") || lower.contains("level") || lower.contains("to") || lower.contains("db")) && !lower.contains("show")
+        if (isMute || isUnmute || isGain), detectSendIndex(lower, labels: labels) != nil {
+            return handleCueQuery(lower, rawQuery: rawQuery, uad: uad, auditor: auditor)
+        }
+        return nil
+    }
+
+    /// Detects if query is a direct plugin bypass/enable/power command
+    private func handlePluginCommandOnly(_ lower: String, rawQuery: String, uad: UADClient, auditor: AIAudioAuditor) -> String? {
+        guard Self.isPluginQuery(lower) else { return nil }
+        let isQuestion = lower.contains("show") || lower.contains("what") || lower.contains("list") || lower.contains("which") || lower.contains("info") || lower.contains("how") || lower.contains("?")
+        if isQuestion { return nil }
+        let isPowerToggle = lower.contains("bypass") || lower.contains("unbypass") || lower.contains("enable") || lower.contains("disable") || lower.contains("turn on") || lower.contains("turn off") || lower.contains("toggle")
+        if isPowerToggle {
+            return handlePluginQuery(lower, rawQuery: rawQuery, uad: uad, auditor: auditor)
+        }
+        return nil
+    }
+
+    /// Formats deterministic offline telemetry inspection tables or guides
+    public func handleOfflineTelemetryOrInquiry(lower: String, rawQuery: String, uad: UADClient, auditor: AIAudioAuditor) -> String {
+        // 1. Overloaded / Clipping Channels
+        if Self.isOverloadQuery(lower) {
+            return handleOverloadQuery(uad: uad, auditor: auditor)
+        }
+
+        // 2. Zero Input / Silent Channels
         if Self.isZeroInputQuery(lower) {
-            let response = handleZeroInputQuery(uad: uad)
-            completion(response)
-            return
+            return handleZeroInputQuery(uad: uad)
         }
 
-        // 8. Active Signal / Audio Streams (Local UAD Console Telemetry - Instant 0ms)
+        // 3. Active Signal / Audio Streams
         if Self.isActiveSignalQuery(lower) {
-            let response = handleActiveSignalQuery(uad: uad)
-            completion(response)
-            return
+            return handleActiveSignalQuery(uad: uad)
         }
 
-        // 9. Mute / Solo Status Inspection (Local UAD Console Telemetry - Instant 0ms)
+        // 4. Mute / Solo Status Inspection
         if isMuteSoloStatusQuery(lower) {
-            let response = handleMuteSoloStatusQuery(lower: lower, uad: uad)
-            completion(response)
-            return
+            return handleMuteSoloStatusQuery(lower: lower, uad: uad)
         }
 
-        // 10. Full Channel List / Complete Inventory (Local UAD Console Telemetry - Instant 0ms)
+        // 5. Full Channel List / Complete Inventory
         if Self.isFullChannelListQuery(lower) {
-            let response = handleFullChannelListQuery(uad: uad)
-            completion(response)
-            return
+            return handleFullChannelListQuery(uad: uad)
         }
 
-        // 11. Console / Session Summary (Local UAD Console Telemetry - Instant 0ms)
+        // 6. Console / Session Summary
         if Self.isConsoleSummaryQuery(lower) {
-            let response = handleConsoleSummaryQuery(uad: uad)
-            completion(response)
-            return
+            return handleConsoleSummaryQuery(uad: uad)
         }
 
-        // 11. Fader Levels Inspection (Local UAD Console Telemetry - Instant 0ms)
+        // 7. Fader Levels Inspection
         if isFaderInspectionQuery(lower) {
-            let response = handleFaderInspectionQuery(uad: uad)
-            completion(response)
-            return
+            return handleFaderInspectionQuery(uad: uad)
         }
 
-        // 12. Pan Positions Inspection (Local UAD Console Telemetry - Instant 0ms)
+        // 8. Pan Positions Inspection
         if isPanInspectionQuery(lower) {
-            let response = handlePanInspectionQuery(uad: uad)
-            completion(response)
-            return
+            return handlePanInspectionQuery(uad: uad)
         }
 
-        // 13. SSL UF8 & Hardware Operation Guide (Local 0ms Offline Reference)
+        // 9. CUE & Sends Information
+        if Self.isCueQuery(lower), let cueResp = handleCueQuery(lower, rawQuery: rawQuery, uad: uad, auditor: auditor) {
+            return cueResp
+        }
+
+        // 10. UAD Plugins & Inserts Information
+        if Self.isPluginQuery(lower), let plugResp = handlePluginQuery(lower, rawQuery: rawQuery, uad: uad, auditor: auditor) {
+            return plugResp
+        }
+
+        // 11. SSL UF8 & Hardware Operation Guide
         if let guideResponse = handleHardwareGuideQuery(lower) {
-            completion(guideResponse)
-            return
+            return guideResponse
         }
 
-        // 14. Mix Audit / Pre-Flight Inspection
+        // 12. Mix Audit / Pre-Flight Inspection
         if lower.contains("audit") || lower.contains("gain stage") || lower.contains("inspect") {
             if let latestUrl = AIReportManager.shared.latestReport(),
                let content = try? String(contentsOf: latestUrl) {
-                completion("📋 Latest Acoustic Audit Report:\n\n" + content)
+                return "📋 Latest Acoustic Audit Report:\n\n" + content
             } else if !auditor.suggestions.isEmpty {
                 let items = auditor.suggestions.map { "• \($0.channelName): \($0.issueTitle) — \($0.voiceDescription)" }.joined(separator: "\n")
-                completion("📋 Active Co-Producer Recommendations:\n\n" + items)
+                return "📋 Active Co-Producer Recommendations:\n\n" + items
             } else {
-                completion("No active audit report found. Tap the FINE key on your UF8 to run a 32-channel acoustic pre-flight inspection!")
-            }
-            return
-        }
-
-        // 15. Natural Language & AI Audio Consultation
-        let currentProvider = aiProvider.lowercased()
-        if currentProvider == "local" {
-            queryLocalLLM(prompt: text, uad: uad, auditor: auditor, completion: completion)
-            return
-        } else if currentProvider == "gemini" {
-            if !geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                queryGeminiAPI(prompt: text, uad: uad, auditor: auditor, completion: completion)
-                return
-            } else {
-                completion("Google Gemini is selected as your AI provider, but no API key is configured. Use 'Settings' -> 'Configure Google Gemini API Key' to enter your key, or switch provider to Local Llama 3.2.")
-                return
-            }
-        } else {
-            // Auto Mode
-            let hasGemini = !geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            if hasGemini {
-                OllamaServiceManager.shared.isOllamaRunning(endpoint: ollamaEndpoint) { [weak self] running in
-                    guard let self = self else { return }
-                    if running {
-                        self.executeOllamaGenerate(prompt: text, uad: uad, auditor: auditor, completion: completion)
-                    } else {
-                        self.queryGeminiAPI(prompt: text, uad: uad, auditor: auditor, completion: completion)
-                    }
-                }
-                return
-            } else if lower.hasPrefix("why") || lower.hasPrefix("how") || lower.hasPrefix("what") || lower.hasPrefix("can you") || lower.hasPrefix("explain") || lower.contains("?") {
-                queryLocalLLM(prompt: text, uad: uad, auditor: auditor, completion: completion)
-                return
+                return "No active audit report found. Tap the FINE key on your UF8 to run a 32-channel acoustic pre-flight inspection!"
             }
         }
 
-        // 16. Fallback Help Guidance
-        let help = """
+        // 13. Fallback Help Guidance
+        return generateHelpGuidance()
+    }
+
+    public func generateHelpGuidance() -> String {
+        return """
         🤖 S&D Co-Producer UAD Console Telemetry & Mixer Commands:
         • "Show CUE sends" / "CUE information" — Comprehensive 4 Cue buses + 2 Aux matrix
         • "Show CUE 1" / "CUE 2 sends" — Live tracks routing to specific Cue bus
@@ -608,9 +612,8 @@ public final class AIChatEngine: @unchecked Sendable {
         • "Listening 10 secs and analyze xyz" — Record 10s of 32-channel telemetry, save report & summarize
         • "Audit mix" — Run full acoustic pre-flight inspection
 
-        💡 Tip: Enter your Gemini API Key in Settings to enable free-form conversational AI for EQ advice, compression targets, and creative mix feedback!
+        💡 Tip: Running on Local Llama 3.2 by default! You can ask free-form mixing questions, gain staging recommendations, and track analysis anytime.
         """
-        completion(help)
     }
 
     // MARK: - Timed Telemetry Listening & Capture
@@ -2808,41 +2811,138 @@ public final class AIChatEngine: @unchecked Sendable {
         return nil
     }
 
+    // MARK: - Mixer Telemetry Context Generation for Local LLM
+
+    public func generateMixerTelemetrySummaryForLLM(uad: UADClient, auditor: AIAudioAuditor) -> String {
+        var lines: [String] = []
+        lines.append("LIVE APOLLO CONSOLE MIXER TELEMETRY & STATUS:")
+        lines.append("• Master Monitor: \(String(format: "%.1f", uad.monitorLevelDb)) dB, Muted: \(uad.monitorMute ? "YES" : "NO")")
+
+        let sortedChannels = uad.channels.values.sorted { $0.id < $1.id }
+
+        // 1. Overloaded / Clipping Channels (Peak >= -0.1 dBFS or meterClip)
+        let overloaded = sortedChannels.filter { $0.meterPeak >= -0.1 || $0.meterClip }
+        if !overloaded.isEmpty {
+            let chList = overloaded.map { "Ch \($0.id + 1) [\($0.name)]: \(String(format: "%.1f", $0.meterPeak)) dBFS" }.joined(separator: ", ")
+            lines.append("• ⚠️ OVERLOADED / CLIPPING TRACKS: \(chList)")
+        } else {
+            lines.append("• Headroom Status: Normal (No clipping detected, all channels < -0.1 dBFS)")
+        }
+
+        // 2. Silent / Zero-Input Channels (Peak <= -60.0 dBFS)
+        let silent = sortedChannels.filter { $0.meterPeak <= -60.0 }
+        if !silent.isEmpty {
+            let chList = silent.map { "Ch \($0.id + 1) [\($0.name)] (\(String(format: "%.1f", $0.meterPeak)) dBFS)" }.joined(separator: ", ")
+            lines.append("• 🔇 ZERO-INPUT / SILENT TRACKS (\(silent.count)): \(chList)")
+        }
+
+        // 3. Active Signal Streams (Peak > -60.0 dBFS)
+        let active = sortedChannels.filter { $0.meterPeak > -60.0 }
+        if !active.isEmpty {
+            let chList = active.map { "Ch \($0.id + 1) [\($0.name)]: \(String(format: "%.1f", $0.meterPeak)) dBFS" }.joined(separator: ", ")
+            lines.append("• 🔊 ACTIVE AUDIO STREAMS (\(active.count)): \(chList)")
+        }
+
+        // 4. Muted / Soloed Channels
+        let muted = sortedChannels.filter { $0.mute }
+        if !muted.isEmpty {
+            lines.append("• Muted Tracks: " + muted.map { "Ch \($0.id + 1) [\($0.name)]" }.joined(separator: ", "))
+        }
+        let soloed = sortedChannels.filter { $0.solo }
+        if !soloed.isEmpty {
+            lines.append("• Soloed Tracks: " + soloed.map { "Ch \($0.id + 1) [\($0.name)]" }.joined(separator: ", "))
+        }
+
+        // 5. Channel Details (Fader, Pan, Preamp, Plugins)
+        lines.append("• Channel Strips:")
+        for ch in sortedChannels {
+            var details: [String] = []
+            details.append("Fader: \(String(format: "%.1f", ch.faderDb)) dB")
+            let panStr = ch.pan == 0 ? "C" : (ch.pan < 0 ? "L\(Int(abs(ch.pan) * 100))" : "R\(Int(ch.pan * 100))")
+            details.append("Pan: \(panStr)")
+            if ch.mute { details.append("MUTED") }
+            if ch.solo { details.append("SOLO") }
+            details.append("Peak: \(String(format: "%.1f", ch.meterPeak)) dBFS")
+
+            // Preamp
+            if ch.preamp.hasPreamp {
+                var preDetails: [String] = ["Gain: \(String(format: "%.1f", ch.preamp.gain)) dB"]
+                if ch.preamp.phantom48V { preDetails.append("+48V ON") }
+                if ch.preamp.lowCut { preDetails.append("75Hz Low Cut") }
+                if ch.preamp.pad { preDetails.append("-20dB Pad") }
+                if ch.preamp.phase { preDetails.append("Phase Invert") }
+                details.append("Preamp: [\(preDetails.joined(separator: ", "))]")
+            }
+
+            // Unison & Inserts
+            var plugNames: [String] = []
+            if !ch.unisonEffect.name.isEmpty {
+                plugNames.append("Unison: \(ch.unisonEffect.name) (\(ch.unisonEffect.power ? "Active" : "Bypassed"))")
+            } else if !ch.preamp.unisonPluginName.isEmpty {
+                plugNames.append("Unison: \(ch.preamp.unisonPluginName) (\(ch.preamp.unisonPower ? "Active" : "Bypassed"))")
+            }
+            for (idx, eff) in ch.effects.sorted(by: { $0.key < $1.key }) where !eff.name.isEmpty {
+                plugNames.append("Ins \(idx + 1): \(eff.name) (\(eff.power ? "Active" : "Bypassed"))")
+            }
+            if !plugNames.isEmpty {
+                details.append("Plugins: [\(plugNames.joined(separator: "; "))]")
+            }
+
+            lines.append("  - Ch \(ch.id + 1) (\(ch.name)): " + details.joined(separator: " | "))
+        }
+
+        // 6. Active Co-Producer Recommendations
+        if !auditor.suggestions.isEmpty {
+            lines.append("• Co-Producer Recommendations:")
+            for s in auditor.suggestions {
+                lines.append("  - \(s.channelName): \(s.issueTitle) — \(s.voiceDescription)")
+            }
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - Local LLM (Ollama / Llama 3.2) REST API Client
 
-    public func queryLocalLLM(prompt: String, uad: UADClient, auditor: AIAudioAuditor, completion: @escaping (String) -> Void) {
+    public func queryLocalLLM(prompt: String, uad: UADClient, auditor: AIAudioAuditor, fallback: (() -> String)? = nil, completion: @escaping (String) -> Void) {
         OllamaServiceManager.shared.ensureOllamaRunning(endpoint: ollamaEndpoint) { [weak self] running in
             guard let self = self else { return }
             if !running {
                 DispatchQueue.main.async {
-                    completion("""
-                    ⚠️ **Local Llama 3.2 is Offline** (Could not connect to Ollama at \(self.ollamaEndpoint))
+                    if let fallbackText = fallback?() {
+                        completion(fallbackText)
+                    } else {
+                        completion("""
+                        ⚠️ **Local Llama 3.2 is Offline** (Could not connect to Ollama at \(self.ollamaEndpoint))
 
-                    To activate Local Llama 3.2, start Ollama by running:
-                    `ollama serve` (or launch `/opt/homebrew/bin/ollama serve`)
+                        To activate Local Llama 3.2, start Ollama by running:
+                        `ollama serve` (or launch `/opt/homebrew/bin/ollama serve`)
 
-                    Expected model: `\(self.ollamaModel)`
-                    Offline mixer commands, CUE sends, fader motor unity, preamp inspection, and tactile navigation remain 100% operational in 0ms!
-                    """)
+                        Expected model: `\(self.ollamaModel)`
+                        Offline mixer commands, CUE sends, fader motor unity, preamp inspection, and tactile navigation remain 100% operational in 0ms!
+                        """)
+                    }
                 }
                 return
             }
-            self.executeOllamaGenerate(prompt: prompt, uad: uad, auditor: auditor, completion: completion)
+            self.executeOllamaGenerate(prompt: prompt, uad: uad, auditor: auditor, fallback: fallback, completion: completion)
         }
     }
 
-    public func executeOllamaGenerate(prompt: String, uad: UADClient, auditor: AIAudioAuditor, modelOverride: String? = nil, completion: @escaping (String) -> Void) {
+    public func executeOllamaGenerate(prompt: String, uad: UADClient, auditor: AIAudioAuditor, modelOverride: String? = nil, fallback: (() -> String)? = nil, completion: @escaping (String) -> Void) {
         let cleanEndpoint = ollamaEndpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: "\(cleanEndpoint)/api/generate") else {
-            completion("Invalid Ollama endpoint: \(ollamaEndpoint)")
+            if let fb = fallback?() {
+                completion(fb)
+            } else {
+                completion("Invalid Ollama endpoint: \(ollamaEndpoint)")
+            }
             return
         }
 
         let targetModel = modelOverride ?? ollamaModel
 
-        let chSummary = uad.channels.values.sorted { $0.id < $1.id }.map {
-            "Ch \($0.id + 1) (\($0.name)): fader \(String(format: "%.1f", $0.faderDb))dB, pan \($0.pan == 0 ? "C" : ($0.pan < 0 ? "L" : "R")), mute \($0.mute), solo \($0.solo), peak \(String(format: "%.1f", $0.meterPeak))dBFS"
-        }.joined(separator: "\n")
+        let telemetrySummary = generateMixerTelemetrySummaryForLLM(uad: uad, auditor: auditor)
 
         let hardwareManualKnowledge = """
         OFFICIAL SSL UF8 & UNIVERSAL AUDIO APOLLO BRIDGE MANUAL & SPECIFICATION:
@@ -2873,16 +2973,17 @@ public final class AIChatEngine: @unchecked Sendable {
         You are S&D Co-Producer, an expert AI audio engineer embedded inside the UA-MCU Bridge for SSL UF8 and Universal Audio Apollo interfaces, running on Local Llama 3.2.
         You have authoritative knowledge of the official hardware specifications, MIDI protocols, surface layouts, gestures, and operational manuals for both the SSL UF8 and UAD Apollo Console.
         When answering user questions:
-        1. Always explain the exact physical hardware buttons, faders, V-Pots, LED tallies, and gestures required on the SSL UF8 surface.
-        2. Reference specific hardware functions: e.g., AUTO+SEL for 0.0 dB Unity Gain, Long-Press SEL for -oo dB floor, CHANNEL key for Preamp Focus, SEND key for Cue mixes, PLUG-IN key for DSP parameter pages, FLIP for returning home, and the Center Circle key for emergency Monitor Mute.
-        3. Provide professional, world-class audio engineering advice (gain staging, EQ carving, compression ratios, acoustic troubleshooting) tailored to Universal Audio analog modeling plugins (1176, LA-2A, Neve 1073, Pultec, etc.).
-        4. Keep explanations concise, structured, and immediately actionable for tactile and screen-reader accessibility.
+        1. Understand the user's inquiry in depth using the live Apollo Console telemetry provided below.
+        2. If the user asks about silent or zero-input channels, identify which channels are silent (peak ≤ -60 dBFS) and give concrete audio engineering advice (check cables, microphone phantom power +48V, preamp gain).
+        3. If the user asks about clipping or overloaded channels, identify the clipping tracks (peak ≥ -0.1 dBFS) and give actionable gain staging advice.
+        4. If the user asks about plug-ins, CUE sends, fader positions, or mutes/solos, reference the live channel configuration accurately and explain how to control them on the SSL UF8 hardware.
+        5. Reference specific physical hardware controls: AUTO+SEL for 0.0 dB Unity Gain, Long-Press SEL for -oo dB floor, CHANNEL key for Preamp Focus (+48V, Low Cut, Pad, Phase, Gain), SEND key for Cue mixes, PLUG-IN key for DSP parameter pages, FLIP for returning home, and the Center Circle key for emergency Monitor Mute.
+        6. Keep explanations clear, musically knowledgeable, structured, and immediately actionable.
 
         Reference Specification & Manual:
         \(hardwareManualKnowledge)
 
-        Current Apollo Mixer State:
-        \(chSummary)
+        \(telemetrySummary)
         """
 
         let payload: [String: Any] = [
@@ -2897,7 +2998,11 @@ public final class AIChatEngine: @unchecked Sendable {
         ]
 
         guard let httpBody = try? JSONSerialization.data(withJSONObject: payload) else {
-            completion("Failed to serialize Local LLM request payload.")
+            if let fb = fallback?() {
+                completion(fb)
+            } else {
+                completion("Failed to serialize Local LLM request payload.")
+            }
             return
         }
 
@@ -2921,16 +3026,24 @@ public final class AIChatEngine: @unchecked Sendable {
             }
 
             if let error = error {
-                DispatchQueue.main.async {
-                    completion("Local LLM Error: \(error.localizedDescription)")
+                if let fb = fallback?() {
+                    DispatchQueue.main.async { completion(fb) }
+                } else {
+                    DispatchQueue.main.async {
+                        completion("Local LLM Error: \(error.localizedDescription)")
+                    }
                 }
                 return
             }
 
             guard let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                DispatchQueue.main.async {
-                    completion("Failed to parse response from Local LLM (Ollama).")
+                if let fb = fallback?() {
+                    DispatchQueue.main.async { completion(fb) }
+                } else {
+                    DispatchQueue.main.async {
+                        completion("Failed to parse response from Local LLM (Ollama).")
+                    }
                 }
                 return
             }
@@ -2943,18 +3056,26 @@ public final class AIChatEngine: @unchecked Sendable {
             } else if let err = json["error"] as? String {
                 if err.lowercased().contains("not found") && modelOverride == nil {
                     // Try alternative model tag (e.g. if llama3.2 was requested, try llama3.2:3b, or vice-versa)
-                    let fallback = targetModel.contains(":") ? (targetModel.components(separatedBy: ":").first ?? targetModel) : "\(targetModel):3b"
-                    if fallback != targetModel {
-                        self.executeOllamaGenerate(prompt: prompt, uad: uad, auditor: auditor, modelOverride: fallback, completion: completion)
+                    let fallbackTag = targetModel.contains(":") ? (targetModel.components(separatedBy: ":").first ?? targetModel) : "\(targetModel):3b"
+                    if fallbackTag != targetModel {
+                        self.executeOllamaGenerate(prompt: prompt, uad: uad, auditor: auditor, modelOverride: fallbackTag, fallback: fallback, completion: completion)
                         return
                     }
                 }
-                DispatchQueue.main.async {
-                    completion("Local LLM (Ollama) Error: \(err)")
+                if let fb = fallback?() {
+                    DispatchQueue.main.async { completion(fb) }
+                } else {
+                    DispatchQueue.main.async {
+                        completion("Local LLM (Ollama) Error: \(err)")
+                    }
                 }
             } else {
-                DispatchQueue.main.async {
-                    completion("Empty response received from Local LLM.")
+                if let fb = fallback?() {
+                    DispatchQueue.main.async { completion(fb) }
+                } else {
+                    DispatchQueue.main.async {
+                        completion("Empty response received from Local LLM.")
+                    }
                 }
             }
         }
@@ -5855,7 +5976,7 @@ public final class AIChatWindowController: NSWindowController, NSTextFieldDelega
         autoItem.state = (AIChatEngine.shared.aiProvider == "auto") ? .on : .off
         menu.addItem(autoItem)
 
-        let localItem = NSMenuItem(title: "Local LLM Only (Ollama - Llama 3.2)", action: #selector(handleSelectProviderMode(_:)), keyEquivalent: "")
+        let localItem = NSMenuItem(title: "Local LLM Only (Ollama - Llama 3.2 - Default)", action: #selector(handleSelectProviderMode(_:)), keyEquivalent: "")
         localItem.target = self
         localItem.representedObject = "local"
         localItem.state = (AIChatEngine.shared.aiProvider == "local") ? .on : .off

@@ -587,6 +587,7 @@ public final class AIChatEngineTests {
 
             let auditor = AIAudioAuditor(uadClient: uad)
             let chat = AIChatEngine()
+            chat.aiProvider = "auto"
 
             let intent = AIChatEngine.TimedListeningIntent(seconds: 0.05, subQuery: "analyze incoming signals")
             var progressUpdates: [String] = []
@@ -1457,8 +1458,11 @@ public final class AIChatEngineTests {
             let prevModel = engine.ollamaModel
 
             // 1. Default properties
-            assertEqual(engine.ollamaEndpoint, "http://127.0.0.1:11434", "Default endpoint must be http://127.0.0.1:11434")
-            assertEqual(engine.ollamaModel, "llama3.2", "Default model must be llama3.2")
+            let newEngine = AIChatEngine()
+            assertEqual(newEngine.aiProvider, "local", "Default aiProvider must be local")
+            assertTrue(newEngine.preferLocalLLMOverTelemetry, "preferLocalLLMOverTelemetry must be true by default")
+            assertEqual(newEngine.ollamaEndpoint, "http://127.0.0.1:11434", "Default endpoint must be http://127.0.0.1:11434")
+            assertEqual(newEngine.ollamaModel, "llama3.2", "Default model must be llama3.2")
 
             // 2. Provider switching
             engine.aiProvider = "local"
@@ -1490,7 +1494,59 @@ public final class AIChatEngineTests {
             engine.aiProvider = "auto"
             controller.updateModelBadge()
 
-            // 5. Test OllamaServiceManager running check with invalid endpoint
+            // 5. Test Mixer Telemetry Context Generation for Local LLM
+            let ch0 = uad.channels[0]!
+            ch0.name = "Kick"
+            ch0.meterPeak = 0.0 // Clipping
+            ch0.meterClip = true
+
+            let ch1 = uad.channels[1]!
+            ch1.name = "Snare"
+            ch1.meterPeak = -144.0 // Silent / Zero-input
+
+            let ch2 = uad.channels[2]!
+            ch2.name = "Lead Vox"
+            ch2.meterPeak = -12.4 // Active signal
+            ch2.preamp.hasPreamp = true
+            ch2.preamp.gain = 38.0
+            ch2.preamp.phantom48V = true
+            ch2.preamp.lowCut = true
+            ch2.unisonEffect.name = "Neve 1073"
+            ch2.unisonEffect.power = true
+            let eff1 = UADEffect(index: 0, isUnison: false)
+            eff1.name = "1176LN Legacy"
+            eff1.power = true
+            ch2.effects[0] = eff1
+
+            let telemetrySummary = engine.generateMixerTelemetrySummaryForLLM(uad: uad, auditor: mcu.auditor)
+            assertTrue(telemetrySummary.contains("OVERLOADED / CLIPPING TRACKS"), "Must identify clipping tracks in LLM context")
+            assertTrue(telemetrySummary.contains("Kick"), "Must include Kick in clipping tracks")
+            assertTrue(telemetrySummary.contains("ZERO-INPUT / SILENT TRACKS"), "Must identify silent tracks in LLM context")
+            assertTrue(telemetrySummary.contains("Snare"), "Must include Snare in silent tracks")
+            assertTrue(telemetrySummary.contains("ACTIVE AUDIO STREAMS"), "Must identify active tracks in LLM context")
+            assertTrue(telemetrySummary.contains("Lead Vox"), "Must include Lead Vox in active tracks")
+            assertTrue(telemetrySummary.contains("Preamp: [Gain: 38.0 dB, +48V ON, 75Hz Low Cut]"), "Must format preamp details")
+            assertTrue(telemetrySummary.contains("Neve 1073 (Active)"), "Must format Unison plugin")
+            assertTrue(telemetrySummary.contains("1176LN Legacy (Active)"), "Must format insert plugin")
+
+            // 6. Test executeOllamaGenerate fallback with invalid endpoint
+            let prevEp = engine.ollamaEndpoint
+            engine.ollamaEndpoint = "http://invalid-host-9999:1234"
+            let fallbackSema = DispatchSemaphore(value: 0)
+            var fallbackReceived = ""
+            engine.executeOllamaGenerate(prompt: "Which channels have zero input?", uad: uad, auditor: mcu.auditor, fallback: {
+                return "FALLBACK_TELEMETRY_TABLE"
+            }) { reply in
+                fallbackReceived = reply
+            }
+            let deadline = Date(timeIntervalSinceNow: 3.0)
+            while fallbackReceived.isEmpty && Date() < deadline {
+                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.05))
+            }
+            assertEqual(fallbackReceived, "FALLBACK_TELEMETRY_TABLE", "Must invoke fallback when Local LLM is offline")
+            engine.ollamaEndpoint = prevEp
+
+            // 7. Test OllamaServiceManager running check with invalid endpoint
             let sema = DispatchSemaphore(value: 0)
             var reportedRunning = true
             OllamaServiceManager.shared.isOllamaRunning(endpoint: "http://invalid-host-9999:1234") { isRunning in
